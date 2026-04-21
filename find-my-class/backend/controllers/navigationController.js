@@ -152,6 +152,10 @@ function sortWaypointCandidatesByStairPreference(cands, max = 8) {
     .slice(0, max);
 }
 
+/** Limits brute-force combo count (caps keep requests from hanging the API / proxy). */
+const CROSS_BUILDING_FLOOR_WAYPOINT_CAP = 4;
+const CROSS_BUILDING_GROUND_WAYPOINT_CAP = 4;
+
 /**
  * Same floor-plan image (`mapId`) but different buildings: route to stairs on start building,
  * cross **floor-ground** between buildings, then stairs on destination building back to this `mapId`.
@@ -195,10 +199,10 @@ async function tryCrossSameFloorDifferentBuildingsViaGround({
 
   if (!candA_g.length || !candB_g.length) return null;
 
-  const A1 = sortWaypointCandidatesByStairPreference(candA_f1);
-  const B1 = sortWaypointCandidatesByStairPreference(candB_f1);
-  const Ag = sortWaypointCandidatesByStairPreference(candA_g);
-  const Bg = sortWaypointCandidatesByStairPreference(candB_g);
+  const A1 = sortWaypointCandidatesByStairPreference(candA_f1, CROSS_BUILDING_FLOOR_WAYPOINT_CAP);
+  const B1 = sortWaypointCandidatesByStairPreference(candB_f1, CROSS_BUILDING_FLOOR_WAYPOINT_CAP);
+  const Ag = sortWaypointCandidatesByStairPreference(candA_g, CROSS_BUILDING_GROUND_WAYPOINT_CAP);
+  const Bg = sortWaypointCandidatesByStairPreference(candB_g, CROSS_BUILDING_GROUND_WAYPOINT_CAP);
   if (!A1.length || !B1.length) return null;
 
   const cache = new Map();
@@ -212,11 +216,16 @@ async function tryCrossSameFloorDifferentBuildingsViaGround({
 
   let best = null;
   let bestScore = Infinity;
+  /** Hard stop so pathfinding combinations cannot exhaust the Node process / proxy timeout. */
+  const MAX_CROSS_BUILDING_COMBINATIONS = 120;
+  let combinationsTried = 0;
 
-  for (const wsARaw of A1) {
+  outerCrossBuilding: for (const wsARaw of A1) {
     for (const wgARaw of Ag) {
       for (const wgBRaw of Bg) {
         for (const wsBRaw of B1) {
+          if (combinationsTried >= MAX_CROSS_BUILDING_COMBINATIONS) break outerCrossBuilding;
+          combinationsTried += 1;
           const [wsA, wgA, wgB, wsB] = await Promise.all([
             hydrateLoc(wsARaw),
             hydrateLoc(wgARaw),
