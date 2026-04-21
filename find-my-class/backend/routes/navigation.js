@@ -19,6 +19,11 @@ router.get(
   validateCorridorHealthQuery,
   asyncHandler(navigationController.getCorridorHealth)
 );
+router.get(
+  '/corridor-location-reachability',
+  validateCorridorHealthQuery,
+  asyncHandler(navigationController.getCorridorLocationReachability)
+);
 router.get('/locations', validateNavigationLocationQuery, asyncHandler(navigationLocationController.list));
 router.post('/locations', protectAdmin, validateNavigationLocationCreate, asyncHandler(navigationLocationController.create));
 router.put('/locations/:id', protectAdmin, validateIdParam('id'), asyncHandler(navigationLocationController.update));

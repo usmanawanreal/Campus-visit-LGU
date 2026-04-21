@@ -14,6 +14,10 @@ export const getRoute = (startLocationId, endLocationId, options = {}) => {
 export const getCorridorHealth = (mapId) =>
   api.get('/navigation/corridor-health', { params: { mapId } });
 
+/** Room/door pins on this map that cannot snap to any corridor component (same rules as Draw Route). */
+export const getCorridorLocationReachability = (mapId) =>
+  api.get('/navigation/corridor-location-reachability', { params: { mapId } });
+
 /**
  * Calls GET /api/navigation/route (A* shortest path on the server graph) and returns
  * normalized [{ x, y }, ...] node coordinates between the two locations.

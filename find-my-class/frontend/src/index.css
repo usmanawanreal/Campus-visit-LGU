@@ -1,16 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Legacy + map pages (emerald & light professional theme) */
 :root {
-  --color-bg: #0f172a;
-  --color-surface: #1e293b;
-  --color-surface-hover: #334155;
-  --color-border: #334155;
-  --color-primary: #3b82f6;
-  --color-primary-hover: #2563eb;
-  --color-text: #f1f5f9;
-  --color-text-muted: #94a3b8;
-  --color-success: #22c55e;
+  --color-bg: #f9fafb;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f3f4f6;
+  --color-border: #e5e7eb;
+  --color-primary: #10b981;
+  --color-primary-hover: #059669;
+  --color-text: #111827;
+  --color-text-muted: #6b7280;
+  --color-success: #10b981;
   --color-danger: #ef4444;
   --radius: 12px;
-  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.2), 0 2px 4px -2px rgb(0 0 0 / 0.2);
+  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
 }
 
 *,
@@ -21,7 +26,7 @@
 
 body {
   margin: 0;
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family: Inter, Roboto, 'Segoe UI', system-ui, -apple-system, sans-serif;
   background: var(--color-bg);
   color: var(--color-text);
   line-height: 1.5;
@@ -116,7 +121,7 @@ input, select, textarea {
 .input:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.22);
 }
 
 .label {
@@ -183,12 +188,12 @@ input, select, textarea {
 
 .nav-link.active {
   color: var(--color-primary);
-  background: rgba(59, 130, 246, 0.15);
+  background: rgba(16, 185, 129, 0.12);
 }
 
 .main {
   flex: 1;
-  padding: 1.5rem 0;
+  padding: 1.5rem 0 2.5rem;
 }
 
 .muted { color: var(--color-text-muted); margin-top: 0.25rem; }
@@ -292,7 +297,7 @@ input, select, textarea {
   transition: background 0.2s;
 }
 .map-page-result-btn:hover { background: var(--color-surface-hover); }
-.map-page-result-btn.active { background: rgba(59, 130, 246, 0.2); color: var(--color-primary); }
+.map-page-result-btn.active { background: rgba(16, 185, 129, 0.18); color: var(--color-primary); }
 .map-page-main { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
 .map-page-selected-dl { margin: 0; display: grid; gap: 0.25rem 1rem; }
 .map-page-selected-dl div { display: flex; gap: 0.5rem; }

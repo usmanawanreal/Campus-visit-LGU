@@ -1,50 +1,33 @@
 # Find My Class — Frontend
 
-React (Vite) + React Router + Axios. Modern UI with dark theme.
+**React 18** + **Vite 5** + **React Router 6** + **Axios**. Indoor maps use **Leaflet** with **react-leaflet** (`CRS.Simple` + image overlays) in `src/components/CampusImageMap.jsx`.
 
-## Setup
+**Complete project guide (architecture, API, corridor routing, env, ports):** see the repository root [**`../README.md`**](../README.md).
+
+## Quick setup
 
 ```bash
 npm install
 npm run dev
 ```
 
-Runs at http://localhost:3000. API calls are proxied to the backend (see `vite.config.js`).
+Default dev URL: **http://localhost:5174** (see `vite.config.js`).  
+`/api` is proxied to the backend — **the proxy `target` port must match** `PORT` in `backend/.env`.
 
 ## Scripts
 
-- `npm run dev` — Development server
-- `npm run build` — Production build
-- `npm run preview` — Preview production build
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Vite dev server + HMR |
+| `npm run build` | Production build → `dist/` |
+| `npm run preview` | Local preview of production build |
 
-## Structure
+## Important paths
 
-```
-frontend/
-  public/
-    favicon.svg
-  src/
-    api/
-      client.js      # Axios instance
-      services.js    # API methods
-    components/
-      Layout.jsx
-      Nav.jsx
-    pages/
-      Home.jsx
-      Search.jsx
-      Buildings.jsx
-      BuildingDetail.jsx
-      Classrooms.jsx
-      ClassroomDetail.jsx
-      RoutesPage.jsx
-      RouteDetail.jsx
-      MapPage.jsx          # Route search and map placeholder
-      Admin.jsx
-    App.jsx
-    main.jsx
-    index.css
-  index.html
-  vite.config.js
-  package.json
-```
+| Path | Purpose |
+|------|---------|
+| `src/data/campusMaps.js` | Floor `mapId`s, PNG URLs, normalized coordinate ranges |
+| `public/assets/maps/` | Floor plan PNG assets |
+| `src/pages/MapPage.jsx` | Map UI, routing, admin drawing tools |
+| `src/services/` | API clients (`api.js` adds `Authorization` from `localStorage`) |
+| `src/context/AuthContext.jsx` | Admin session state |

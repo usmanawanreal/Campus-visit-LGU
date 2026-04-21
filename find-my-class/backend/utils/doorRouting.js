@@ -3,9 +3,13 @@
  * instead of a footprint wall snap. Picks the door with the shortest successful graph path.
  */
 
-function pathLen(detailed) {
+export function routingPathNodeCount(detailed) {
   const p = detailed?.path;
   return Array.isArray(p) ? p.length : 0;
+}
+
+function pathLen(detailed) {
+  return routingPathNodeCount(detailed);
 }
 
 /** Sum of Euclidean segments along the returned path (corridor graph geometry). */

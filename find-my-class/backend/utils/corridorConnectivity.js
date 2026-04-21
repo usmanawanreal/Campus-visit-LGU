@@ -42,6 +42,41 @@ function countComponents(adjacencyMap) {
  *   whatToDoNext: string[]
  * }}
  */
+/**
+ * One representative {x,y} map coordinate per connected corridor component (same graph rules as routing).
+ * Used to test whether a room pin can reach at least one walkable corridor island.
+ */
+export function corridorComponentRepresentatives(corridors, graphOpts = ROUTING_GRAPH_OPTS) {
+  const list = Array.isArray(corridors) ? corridors : [];
+  const validChains = list.filter(
+    (c) => Array.isArray(c.corridorPoints) && c.corridorPoints.length >= 2
+  );
+  if (!validChains.length) return [];
+  const { adjacencyMap, nodeMap } = buildCorridorWalkGraph(validChains, graphOpts);
+  if (!adjacencyMap.size) return [];
+  const visited = new Set();
+  const reps = [];
+  for (const start of adjacencyMap.keys()) {
+    if (visited.has(start)) continue;
+    const stack = [start];
+    visited.add(start);
+    while (stack.length) {
+      const u = stack.pop();
+      for (const e of adjacencyMap.get(u) || []) {
+        if (!visited.has(e.to)) {
+          visited.add(e.to);
+          stack.push(e.to);
+        }
+      }
+    }
+    const pos = nodeMap.get(start);
+    if (pos && Number.isFinite(Number(pos.x)) && Number.isFinite(Number(pos.y))) {
+      reps.push({ x: Number(pos.x), y: Number(pos.y) });
+    }
+  }
+  return reps;
+}
+
 export function analyzeCorridorConnectivity(corridors, graphOpts = ROUTING_GRAPH_OPTS) {
   const list = Array.isArray(corridors) ? corridors : [];
   const validChains = list.filter(

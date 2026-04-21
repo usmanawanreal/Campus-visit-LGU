@@ -266,6 +266,7 @@ export default function MapPage() {
   const [routeMeta, setRouteMeta] = useState(null);
   const [routeSlowHint, setRouteSlowHint] = useState('');
   const [corridorHealth, setCorridorHealth] = useState(null);
+  const [corridorReachability, setCorridorReachability] = useState(null);
   const [corridorHealthError, setCorridorHealthError] = useState('');
   const [corridorHealthLoading, setCorridorHealthLoading] = useState(false);
   const [filterBuildingId, setFilterBuildingId] = useState('');
@@ -1329,11 +1330,16 @@ export default function MapPage() {
 
   const handleCheckCorridorHealth = useCallback(async () => {
     setCorridorHealth(null);
+    setCorridorReachability(null);
     setCorridorHealthError('');
     setCorridorHealthLoading(true);
     try {
-      const { data } = await navigationService.getCorridorHealth(selectedMap.id);
-      setCorridorHealth(data);
+      const [healthRes, reachRes] = await Promise.all([
+        navigationService.getCorridorHealth(selectedMap.id),
+        navigationService.getCorridorLocationReachability(selectedMap.id)
+      ]);
+      setCorridorHealth(healthRes.data);
+      setCorridorReachability(reachRes.data);
     } catch (err) {
       setCorridorHealthError(err?.message || 'Could not check corridors.');
     } finally {
@@ -1473,6 +1479,38 @@ export default function MapPage() {
                   ))}
                 </ul>
               )}
+              {corridorReachability && !corridorReachability.skipped && (
+                <div className="map-corridor-reachability muted" role="status">
+                  <p className="map-corridor-health-ok">
+                    Pins checked vs corridor walk graph: {corridorReachability.evaluatedCount} point/door
+                    {corridorReachability.corridorComponentCount > 1
+                      ? ` (${corridorReachability.corridorComponentCount} separate orange-line islands — a pin must reach at least one island).`
+                      : '.'}
+                  </p>
+                  {corridorReachability.unreachableCount > 0 ? (
+                    <>
+                      <p className="map-corridor-health-bad">
+                        Not linked to any corridor island (routing cannot snap from these pins):{' '}
+                        {corridorReachability.unreachableCount}
+                      </p>
+                      <ul className="map-corridor-unreachable-list">
+                        {corridorReachability.unreachable.map((row) => (
+                          <li key={row.id}>
+                            <strong>{row.name || row.id}</strong>
+                            {row.kind ? ` (${row.kind})` : ''}
+                            {row.reason === 'missing_coordinates' ? ' — missing x/y' : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : (
+                    <p className="map-corridor-health-ok">Every checked pin can reach a saved corridor line.</p>
+                  )}
+                </div>
+              )}
+              {corridorReachability?.skipped && (
+                <p className="muted">Pin reachability was skipped: add corridor polylines (2+ points each) first.</p>
+              )}
             </div>
           )}
         </div>
@@ -1579,9 +1617,20 @@ export default function MapPage() {
         )}
         {routeMeta?.crossMap && routeMeta?.transitionWaypoints && (
           <p className="muted map-route-transition-hint">
-            Cross-floor path uses transition points:{' '}
-            <strong>{routeMeta.transitionWaypoints.onStartFloorPlan || '—'}</strong> on the first map, then{' '}
-            <strong>{routeMeta.transitionWaypoints.onDestinationFloorPlan || '—'}</strong> on the destination map.
+            {routeMeta.crossBuildingViaGround ? (
+              <>
+                Same floor image, different buildings: follow the blue line to{' '}
+                <strong>{routeMeta.transitionWaypoints.onStartFloorPlan || '—'}</strong>, cross the ground plan (
+                <strong>{routeMeta.transitionWaypoints.onDestinationFloorPlan || '—'}</strong>), then re-enter this
+                image at <strong>{routeMeta.transitionWaypoints.onReturnFloorPlan || '—'}</strong>.
+              </>
+            ) : (
+              <>
+                Cross-floor path uses transition points:{' '}
+                <strong>{routeMeta.transitionWaypoints.onStartFloorPlan || '—'}</strong> on the first map, then{' '}
+                <strong>{routeMeta.transitionWaypoints.onDestinationFloorPlan || '—'}</strong> on the destination map.
+              </>
+            )}
           </p>
         )}
         {routeMeta?.crossMap &&
