@@ -76,3 +76,46 @@ test('pickBestRouteWithOptionalDoors prefers start and end doors when hop count 
   assert.equal(r.physicalStart._id, 'sd');
   assert.equal(r.physicalEnd._id, 'ed');
 });
+
+test('pickBestRouteWithOptionalDoors earlyExitOnFirstSuccess returns first viable path in iteration order', async () => {
+  const roomA = { _id: 'ra', x: 0, y: 0, kind: 'point' };
+  const roomB = { _id: 'rb', x: 100, y: 100, kind: 'point' };
+  const ed1 = { _id: 'e1', x: 1, y: 1, kind: 'door' };
+  const ed2 = { _id: 'e2', x: 2, y: 2, kind: 'door' };
+
+  const runDetailedForPair = async (_from, to) => {
+    if (to._id === 'rb') return { path: [] };
+    if (to._id === 'e1') return { path: [{ x: 1, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 3 }], routingGraph: 'corridor' };
+    if (to._id === 'e2') return { path: [{ x: 1, y: 1 }, { x: 2, y: 2 }], routingGraph: 'corridor' };
+    return { path: [] };
+  };
+
+  const r = await pickBestRouteWithOptionalDoors(roomA, roomB, [], [ed1, ed2], runDetailedForPair, {
+    earlyExitOnFirstSuccess: true
+  });
+  assert.equal(r.endDoorUsed._id, 'e1');
+  assert.equal(r.physicalEnd._id, 'e1');
+});
+
+test('pickBestRouteWithOptionalDoors omitDirectFromTo skips we→room and tries doors first', async () => {
+  const roomB = { _id: 'rb', x: 100, y: 100, kind: 'point' };
+  const we = { _id: 'we', x: 5, y: 5, kind: 'point' };
+  const ed = { _id: 'ed', x: 99, y: 99, kind: 'door' };
+  const pairs = [];
+  const runDetailedForPair = async (from, to) => {
+    pairs.push([from._id, to._id].join('→'));
+    if (from._id === 'we' && to._id === 'rb') return { path: [] };
+    if (from._id === 'we' && to._id === 'ed') {
+      return { path: [{ x: 5, y: 5 }, { x: 99, y: 99 }], routingGraph: 'corridor' };
+    }
+    return { path: [] };
+  };
+
+  const r = await pickBestRouteWithOptionalDoors(we, roomB, [], [ed], runDetailedForPair, {
+    earlyExitOnFirstSuccess: true,
+    omitDirectFromTo: true
+  });
+  assert.equal(r.endDoorUsed._id, 'ed');
+  assert.ok(!pairs.some((p) => p === 'we→rb'), 'direct leg should not be in pickBest when omitted');
+  assert.ok(pairs.some((p) => p === 'we→ed'));
+});

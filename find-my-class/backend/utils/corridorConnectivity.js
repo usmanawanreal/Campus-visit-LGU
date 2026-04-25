@@ -1,10 +1,36 @@
 import { buildCorridorWalkGraph } from '../services/corridorWalkGraph.js';
 
 /** Same defaults as pathfindingService.tryCorridorPathfinding graph build. */
-const ROUTING_GRAPH_OPTS = {
+export const ROUTING_GRAPH_OPTS = {
   crossCorridorEndpointMergeMax: 10,
   mergeCoincidentMax: 4
 };
+
+/**
+ * One arbitrary vertex id per connected component (same traversal order as corridorComponentRepresentatives).
+ * Used for fast corridor QA (BFS from a snapped pin instead of full A* per anchor).
+ */
+export function getComponentRepresentativeVertexIds(adjacencyMap) {
+  if (!adjacencyMap?.size) return [];
+  const visited = new Set();
+  const reps = [];
+  for (const start of adjacencyMap.keys()) {
+    if (visited.has(start)) continue;
+    const stack = [start];
+    visited.add(start);
+    while (stack.length) {
+      const u = stack.pop();
+      for (const e of adjacencyMap.get(u) || []) {
+        if (!visited.has(e.to)) {
+          visited.add(e.to);
+          stack.push(e.to);
+        }
+      }
+    }
+    reps.push(start);
+  }
+  return reps;
+}
 
 function countComponents(adjacencyMap) {
   if (!adjacencyMap?.size) return 0;

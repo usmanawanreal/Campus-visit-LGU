@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   appendLegPoints,
+  coerceCrossFloorLegMapIds,
   rawPointsToSegments,
   resolvePrimaryMapId
 } from './navigationRouteMerge.js';
@@ -62,6 +63,20 @@ test('rawPointsToSegments splits when mapId changes', () => {
   assert.equal(segs[0].points.length, 2);
   assert.equal(segs[1].mapId, 'b');
   assert.equal(segs[1].points.length, 2);
+});
+
+test('coerceCrossFloorLegMapIds yields two segments when both legs shared one mapId', () => {
+  const raw = [
+    { x: 0, y: 0, mapId: 'floor-a', floor: 2, buildingId: 'b' },
+    { x: 1, y: 1, mapId: 'floor-a', floor: 2, buildingId: 'b' },
+    { x: 2, y: 2, mapId: 'floor-a', floor: 2, buildingId: 'b' },
+    { x: 3, y: 3, mapId: 'floor-a', floor: 3, buildingId: 'b' }
+  ];
+  coerceCrossFloorLegMapIds(raw, 2, 'floor-a', 'floor-b');
+  const segs = rawPointsToSegments(raw);
+  assert.equal(segs.length, 2);
+  assert.equal(segs[0].mapId, 'floor-a');
+  assert.equal(segs[1].mapId, 'floor-b');
 });
 
 test('appendLegPoints prepends start door and appends end door when snaps differ from pins', () => {

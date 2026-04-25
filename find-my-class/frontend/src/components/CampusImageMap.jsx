@@ -148,17 +148,24 @@ function CampusImageMap({
   /** When true, map pin popups allow renaming navigation locations (admin session). */
   isAdminRenameEnabled = false,
   /** (id, newName) => Promise — persists name via API; parent refreshes location lists. */
-  onRenameNavigationLocation
+  onRenameNavigationLocation,
+  /** Location ids that cannot snap to any corridor island — drawn in red when listed. */
+  orphanLocationIds = [],
+  /** After stair audit: cannot walk corridor graph to stairs/elevator — green pins. */
+  stairGapLocationIds = [],
+  /** Cross-floor connectivity audit: cannot reach another floor via corridors + stairs — pink pins. */
+  crossFloorGapLocationIds = []
 }) {
   const floorKey = mapKey ?? mapDefinition.id;
   const bounds = useMemo(
     () => new LatLngBounds([0, 0], [mapDefinition.height, mapDefinition.width]),
     [mapDefinition.height, mapDefinition.width]
   );
-  const focusedLocation = useMemo(
-    () => locations.find((location) => location._id === focusedLocationId) || null,
-    [locations, focusedLocationId]
-  );
+  const focusedLocation = useMemo(() => {
+    if (focusedLocationId == null || focusedLocationId === '') return null;
+    const want = String(focusedLocationId);
+    return locations.find((location) => String(location._id ?? location.id ?? '') === want) || null;
+  }, [locations, focusedLocationId]);
   const normalizedRoute = useMemo(
     () => routePath.map((point) => toLeafletPoint(point, mapDefinition)),
     [routePath, mapDefinition]
@@ -174,6 +181,18 @@ function CampusImageMap({
   const focusedNavIdSet = useMemo(
     () => new Set((focusedNavigationNodeIds || []).map(String)),
     [focusedNavigationNodeIds]
+  );
+  const orphanIdSet = useMemo(
+    () => new Set((orphanLocationIds || []).map(String)),
+    [orphanLocationIds]
+  );
+  const stairGapIdSet = useMemo(
+    () => new Set((stairGapLocationIds || []).map(String)),
+    [stairGapLocationIds]
+  );
+  const crossFloorGapIdSet = useMemo(
+    () => new Set((crossFloorGapLocationIds || []).map(String)),
+    [crossFloorGapLocationIds]
   );
   const normalizedLocations = useMemo(
     () =>
@@ -402,20 +421,52 @@ function CampusImageMap({
       ))}
       {normalizedLocations.map((location) => {
         const isDoor = (location.kind || 'point') === 'door';
-        const focused = location._id === focusedLocationId;
+        const locId = String(location._id ?? location.id ?? '');
+        const focused =
+          focusedLocationId != null &&
+          focusedLocationId !== '' &&
+          locId === String(focusedLocationId);
+        const isOrphan = locId !== '' && orphanIdSet.has(locId);
+        const isCrossFloorGap = locId !== '' && crossFloorGapIdSet.has(locId);
+        const isStairGap = locId !== '' && stairGapIdSet.has(locId);
         const pathOptions = focused
           ? { color: '#f59e0b', fillColor: '#fbbf24', fillOpacity: 0.98, weight: 2 }
-          : isDoor
-            ? { color: '#78350f', fillColor: '#d97706', fillOpacity: 0.95, weight: 2 }
-            : { color: '#2563eb', fillColor: '#3b82f6', fillOpacity: 0.95, weight: 2 };
+          : isOrphan
+            ? { color: '#b91c1c', fillColor: '#ef4444', fillOpacity: 0.98, weight: 3 }
+            : isCrossFloorGap
+              ? { color: '#be185d', fillColor: '#f472b6', fillOpacity: 0.96, weight: 3 }
+              : isStairGap
+                ? { color: '#15803d', fillColor: '#22c55e', fillOpacity: 0.96, weight: 3 }
+                : isDoor
+                  ? { color: '#78350f', fillColor: '#d97706', fillOpacity: 0.95, weight: 2 }
+                  : { color: '#2563eb', fillColor: '#3b82f6', fillOpacity: 0.95, weight: 2 };
         return (
           <CircleMarker
-            key={location._id}
+            key={locId || `pin-${location.name}-${location.leafletCenter.join(',')}`}
             center={location.leafletCenter}
-            radius={focused ? 11 : isDoor ? 9 : 8}
+            radius={
+              focused ? 11 : isOrphan ? 11 : isCrossFloorGap ? 10 : isStairGap ? 10 : isDoor ? 9 : 8
+            }
             pathOptions={pathOptions}
           >
             <Popup>
+              {isOrphan && (
+                <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 600, color: '#b91c1c' }}>
+                  Not linked to corridor graph — extend orange lines or move this pin closer to a hallway.
+                </p>
+              )}
+              {isCrossFloorGap && !isOrphan && (
+                <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 600, color: '#be185d' }}>
+                  Cross-floor connectivity: this pin is not on a complete corridor + stair path to another floor image
+                  in this building (see sidebar list for the reason).
+                </p>
+              )}
+              {isStairGap && !isOrphan && !isCrossFloorGap && (
+                <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 600, color: '#15803d' }}>
+                  Stair audit: cannot reach stairs/elevator along corridors from this pin — fix orange lines or add a
+                  labeled stair/elevator point on this floor.
+                </p>
+              )}
               <NavLocationPopupBody
                 location={location}
                 isAdmin={Boolean(isAdminRenameEnabled && onRenameNavigationLocation)}

@@ -7,9 +7,10 @@ import * as nodeService from '../services/nodeService.js';
 import * as edgeService from '../services/edgeService.js';
 import * as locationService from '../services/locationService.js';
 import * as navigationLocationService from '../services/navigationLocationService.js';
+import * as navigationService from '../services/navigationService.js';
 import { campusMaps } from '../data/campusMaps.js';
 
-const TABS = ['buildings', 'classrooms', 'nodes', 'edges', 'locations'];
+const TABS = ['buildings', 'classrooms', 'nodes', 'edges', 'locations', 'corridor'];
 const NODE_TYPES = ['hallway', 'entrance', 'stairs', 'elevator'];
 const LOCATION_TYPES = ['classroom', 'lab', 'office', 'facility'];
 export default function AdminDashboard() {
@@ -45,6 +46,11 @@ export default function AdminDashboard() {
   const [renamingName, setRenamingName] = useState('');
   const [locationListSearch, setLocationListSearch] = useState('');
   const [navLocationListSearch, setNavLocationListSearch] = useState('');
+  const [corridorAuditMapId, setCorridorAuditMapId] = useState(() => campusMaps[0]?.id || '');
+  const [corridorAuditHealth, setCorridorAuditHealth] = useState(null);
+  const [corridorAuditReach, setCorridorAuditReach] = useState(null);
+  const [corridorAuditLoading, setCorridorAuditLoading] = useState(false);
+  const [corridorAuditError, setCorridorAuditError] = useState('');
 
   const loadData = () => {
     setLoading(true);
@@ -71,7 +77,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      navigate('/admin/login');
+      navigate('/login');
       return;
     }
     loadData();
@@ -79,7 +85,7 @@ export default function AdminDashboard() {
 
   const handleLogout = () => {
     logout();
-    navigate('/admin/login');
+    navigate('/login');
   };
 
   const handleAddBuilding = async (e) => {
@@ -265,6 +271,37 @@ export default function AdminDashboard() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const runCorridorAudit = async () => {
+    if (!corridorAuditMapId) return;
+    setCorridorAuditLoading(true);
+    setCorridorAuditError('');
+    try {
+      const [h, r] = await Promise.all([
+        navigationService.getCorridorHealth(corridorAuditMapId),
+        navigationService.getCorridorLocationReachability(corridorAuditMapId)
+      ]);
+      setCorridorAuditHealth(h.data);
+      setCorridorAuditReach(r.data);
+    } catch (e) {
+      setCorridorAuditError(e.message || 'Corridor check failed');
+      setCorridorAuditHealth(null);
+      setCorridorAuditReach(null);
+    } finally {
+      setCorridorAuditLoading(false);
+    }
+  };
+
+  const openMapWithCorridorHighlights = () => {
+    const rows = corridorAuditReach?.unreachable || [];
+    const ids = rows.map((u) => String(u.id));
+    navigate('/map', {
+      state: {
+        selectMapId: corridorAuditMapId,
+        corridorOrphanIds: ids
+      }
+    });
   };
 
   if (!isAuthenticated) return null;
@@ -572,6 +609,119 @@ export default function AdminDashboard() {
               </ul>
             )}
           </section>
+        </>
+      )}
+
+      {activeTab === 'corridor' && (
+        <>
+          <section className="card admin-dashboard-section">
+            <h2>Corridor QA</h2>
+            <p className="muted">
+              Check whether orange corridor polylines form one connected graph (same rules as routing), and list room/door pins
+              that cannot snap to any corridor segment. Use this before debugging slow routes — fix reds by drawing or extending
+              corridors, then re-run.
+            </p>
+            <div className="admin-form-inline" style={{ marginTop: '0.75rem', alignItems: 'flex-end' }}>
+              <div className="admin-form-group">
+                <label className="label" htmlFor="corridor-audit-map">
+                  Floor plan (mapId)
+                </label>
+                <select
+                  id="corridor-audit-map"
+                  className="input"
+                  value={corridorAuditMapId}
+                  onChange={(e) => {
+                    setCorridorAuditMapId(e.target.value);
+                    setCorridorAuditHealth(null);
+                    setCorridorAuditReach(null);
+                  }}
+                >
+                  {campusMaps.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button type="button" className="btn btn-primary" onClick={runCorridorAudit} disabled={corridorAuditLoading}>
+                {corridorAuditLoading ? 'Checking…' : 'Run corridor check'}
+              </button>
+            </div>
+            {corridorAuditError && <p className="error-msg" style={{ marginTop: '0.75rem' }}>{corridorAuditError}</p>}
+          </section>
+
+          {corridorAuditHealth && (
+            <section className="card admin-dashboard-section">
+              <h3>Orange-line connectivity</h3>
+              <p className={corridorAuditHealth.connected ? 'map-corridor-health-ok' : 'map-corridor-health-bad'}>
+                {corridorAuditHealth.connected
+                  ? 'All corridor chains connect into one walkable graph.'
+                  : `Not fully connected — ${corridorAuditHealth.componentCount} separate piece(s). Join polylines at corners or add a short bridge segment.`}
+              </p>
+              <ul className="map-corridor-health-stats muted">
+                <li>Saved corridor documents: {corridorAuditHealth.rawDocumentCount}</li>
+                <li>Valid chains (≥2 points): {corridorAuditHealth.chainCount}</li>
+                <li>Connected components: {corridorAuditHealth.componentCount}</li>
+              </ul>
+            </section>
+          )}
+
+          {corridorAuditReach && !corridorAuditReach.skipped && (
+            <section className="card admin-dashboard-section">
+              <h3>Pins vs corridor graph</h3>
+              <p className="muted">
+                Evaluated {corridorAuditReach.evaluatedCount} point/door pins
+                {corridorAuditReach.corridorComponentCount > 1
+                  ? ` (${corridorAuditReach.corridorComponentCount} separate corridor islands — pins must reach at least one).`
+                  : '.'}
+              </p>
+              {corridorAuditReach.unreachableCount > 0 ? (
+                <>
+                  <p className="map-corridor-health-bad">
+                    Pins flagged: {corridorAuditReach.unreachableCount}.
+                    {corridorAuditReach.corridorQaMaxDistance != null ? (
+                      <>
+                        {' '}
+                        Includes pins farther than <strong>{corridorAuditReach.corridorQaMaxDistance}</strong> map units from
+                        any orange segment.
+                      </>
+                    ) : null}
+                  </p>
+                  <ul className="admin-classroom-list">
+                    {corridorAuditReach.unreachable.map((row) => (
+                      <li key={row.id} className="admin-classroom-item">
+                        <span>
+                          <strong>{row.name || row.id}</strong>
+                          <span className="muted">
+                            {' '}
+                            — {row.kind}
+                            {row.reason === 'missing_coordinates' ? ' (missing x/y)' : ''}
+                            {row.reason === 'far_from_drawn_corridor'
+                              ? ` (too far from corridor${row.minDistanceToCorridor != null ? ` ~${row.minDistanceToCorridor}` : ''})`
+                              : ''}
+                            {row.reason === 'no_corridor_path' ? ' (no graph path)' : ''}
+                          </span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <button type="button" className="btn btn-primary" style={{ marginTop: '0.75rem' }} onClick={openMapWithCorridorHighlights}>
+                    Show on map (red pins)
+                  </button>
+                </>
+              ) : (
+                <p className="map-corridor-health-ok">
+                  Every pin reaches the corridor graph and is close enough to drawn orange segments (same QA rules as the map page).
+                </p>
+              )}
+            </section>
+          )}
+
+          {corridorAuditReach?.skipped && (
+            <section className="card admin-dashboard-section muted">
+              <p>Add at least one corridor polyline (2+ points) on this map before pin reachability can be evaluated.</p>
+            </section>
+          )}
         </>
       )}
 

@@ -6,18 +6,37 @@ import {
   loadCorridorsForMap
 } from '../services/pathfindingService.js';
 import { createError } from '../utils/errors.js';
-import { appendLegPoints, rawPointsToSegments } from '../utils/navigationRouteMerge.js';
+import {
+  appendLegPoints,
+  coerceCrossFloorLegMapIds,
+  rawPointsToSegments
+} from '../utils/navigationRouteMerge.js';
 import { pickBestRouteWithOptionalDoors, routingPathNodeCount } from '../utils/doorRouting.js';
 import {
   analyzeCorridorConnectivity,
-  corridorComponentRepresentatives
+  getComponentRepresentativeVertexIds,
+  ROUTING_GRAPH_OPTS
 } from '../utils/corridorConnectivity.js';
 import {
-  crossFloorWaypointPairPenalty,
   crossFloorWaypointNamePenalty,
-  looksLikeStairsName
+  looksLikeStairsName,
+  looksLikeVerticalTransitionName,
+  rankCrossFloorWaypointCandidates
 } from '../utils/crossFloorWaypointPenalty.js';
+import { searchBestCrossFloorPair } from '../utils/crossFloorRoutePairing.js';
 import { groundConnectorMapIdFor } from '../utils/groundConnectorMap.js';
+import {
+  buildFlatSegmentsFromCorridors,
+  minDistancePointToCorridorSegments
+} from '../utils/corridorPathGeometry.js';
+import { auditStairsReachabilityForMap } from '../utils/stairsReachabilityAudit.js';
+import { auditCrossFloorConnectivityBuilding } from '../utils/crossFloorConnectivityAudit.js';
+import { normalizeFootprintPoints, footprintBoundaryCandidates } from '../utils/footprintRouting.js';
+import {
+  buildCorridorWalkGraph,
+  attachPointToCorridorGraph,
+  detachEphemeralSnapNode
+} from '../services/corridorWalkGraph.js';
 
 function routingFootprint(loc) {
   const fp = Array.isArray(loc.footprintPoints) ? loc.footprintPoints : [];
@@ -64,12 +83,63 @@ async function hydrateNavigationLocation(loc) {
   const node = await Node.findById(nodeId).lean();
   if (!node) return copy;
 
+  return applyNodeFallbackToNavigationLocation(copy, node);
+}
+
+/** Same coordinate fallback as hydrateNavigationLocation, without a DB round-trip (uses preloaded nodes). */
+function hydrateNavigationLocationSync(loc, nodeById) {
+  if (!loc) return null;
+  const copy = { ...loc };
+  const nodeId = copy.nodeId ? String(copy.nodeId) : null;
+  if (!nodeId) return copy;
+  const node = nodeById.get(nodeId);
+  if (!node) return copy;
+  return applyNodeFallbackToNavigationLocation(copy, node);
+}
+
+function applyNodeFallbackToNavigationLocation(copy, node) {
   if (!Number.isFinite(Number(copy.x))) copy.x = node.x;
   if (!Number.isFinite(Number(copy.y))) copy.y = node.y;
   if (!copy.mapId) copy.mapId = node.mapId;
   if (copy.floor == null) copy.floor = node.floor;
   if (!copy.building && !copy.buildingId && node.buildingId) copy.buildingId = node.buildingId;
   return copy;
+}
+
+function bfsReachesAnyCorridorRep(adjacencyMap, startId, repTargetSet) {
+  if (!startId || !repTargetSet?.size) return false;
+  if (repTargetSet.has(startId)) return true;
+  const queue = [startId];
+  const seen = new Set(queue);
+  let qi = 0;
+  while (qi < queue.length) {
+    const u = queue[qi++];
+    for (const e of adjacencyMap.get(u) || []) {
+      if (seen.has(e.to)) continue;
+      if (repTargetSet.has(e.to)) return true;
+      seen.add(e.to);
+      queue.push(e.to);
+    }
+  }
+  return false;
+}
+
+/**
+ * One BFS on the pre-built corridor graph (same merge rules as routing), instead of full A* for every anchor.
+ */
+function pinReachableViaCorridorGraph(bundle, px, py, snapToken, repTargetSet) {
+  const snapId = attachPointToCorridorGraph(
+    bundle.nodeMap,
+    bundle.adjacencyMap,
+    bundle.segments,
+    { x: Number(px), y: Number(py) },
+    snapToken,
+    bundle.nodeDetailsById
+  );
+  if (!snapId) return false;
+  const ok = bfsReachesAnyCorridorRep(bundle.adjacencyMap, snapId, repTargetSet);
+  detachEphemeralSnapNode(bundle.adjacencyMap, bundle.nodeMap, bundle.nodeDetailsById, snapId);
+  return ok;
 }
 
 async function runDetailedForPair(startLoc, endLoc, routeGraphOpts = {}) {
@@ -238,14 +308,22 @@ async function tryCrossSameFloorDifferentBuildingsViaGround({
             wsA,
             linkedDoorsStart,
             [],
-            runFloor
+            runFloor,
+            { earlyExitOnFirstSuccess: true }
           );
           if (routingPathNodeCount(leg1.detailed) < 2) continue;
 
           const d2 = await runDetailedForPair(wgA, wgB, { corridorMapIdHint: groundMapId });
           if (routingPathNodeCount(d2) < 2) continue;
 
-          const leg3 = await pickBestRouteWithOptionalDoors(wsB, endLocation, [], linkedDoorsEnd, runFloor);
+          const leg3 = await pickBestRouteWithOptionalDoors(
+            wsB,
+            endLocation,
+            [],
+            linkedDoorsEnd,
+            runFloor,
+            { earlyExitOnFirstSuccess: true }
+          );
           if (routingPathNodeCount(leg3.detailed) < 2) continue;
 
           const stairPenalty =
@@ -354,7 +432,23 @@ export const getRoute = async (req, res) => {
     startLocation.mapId != null ? String(startLocation.mapId).trim() : '';
   const endMapKey = endLocation.mapId != null ? String(endLocation.mapId).trim() : '';
 
+  /** Same (from,to,hint) is asked many times in one request (doors, cross-building loops). */
+  const routePathfindCache = new Map();
+  const runDetailedForPairRequestCached = async (startLoc, endLoc, routeGraphOpts = {}) => {
+    const hintRaw = routeGraphOpts.corridorMapIdHint;
+    const hint = hintRaw != null && String(hintRaw).trim() !== '' ? String(hintRaw).trim() : '';
+    const keyPart = (loc) =>
+      loc && loc._id != null ? `id:${String(loc._id)}` : `xy:${Number(loc?.x)},${Number(loc?.y)}`;
+    const key = `${keyPart(startLoc)}|${keyPart(endLoc)}|${hint}`;
+    if (routePathfindCache.has(key)) return routePathfindCache.get(key);
+    const resolved = await runDetailedForPair(startLoc, endLoc, routeGraphOpts);
+    routePathfindCache.set(key, resolved);
+    return resolved;
+  };
+
   const rawPoints = [];
+  /** Index in `rawPoints` where the destination-floor leg begins (cross-floor only). */
+  let crossFloorLegSplitAt = null;
   let metaRoutingGraph = 'node';
   let usedAnchors =
     (routingFootprint(startLocation).length >= 3 || routingFootprint(endLocation).length >= 3);
@@ -388,7 +482,7 @@ export const getRoute = async (req, res) => {
       linkedDoorsEnd,
       clientMapHint: mapIdFromClient,
       hydrateNavigationLocation: hydrateNavigationLocation,
-      runDetailedForPair
+      runDetailedForPair: runDetailedForPairRequestCached
     });
     if (via?.success) {
       usedCrossBuildingViaGround = true;
@@ -403,7 +497,7 @@ export const getRoute = async (req, res) => {
 
   if (sameMap && !usedCrossBuildingViaGround) {
     const runPair = (a, b) =>
-      runDetailedForPair(a, b, { corridorMapIdHint: mapIdFromClient });
+      runDetailedForPairRequestCached(a, b, { corridorMapIdHint: mapIdFromClient });
     const leg = await pickBestRouteWithOptionalDoors(
       startLocation,
       endLocation,
@@ -471,52 +565,66 @@ export const getRoute = async (req, res) => {
       return h;
     };
 
-    let best = null;
-    let bestScore = Infinity;
-    for (const wsRaw of candidatesStart) {
-      const ws = await getHydrated(wsRaw);
-      for (const weRaw of candidatesEnd) {
-        const we = await getHydrated(weRaw);
-        const d1 = await runDetailedForPair(startLocation, ws, {
-          corridorMapIdHint: startMapKey
-        });
-        const runEndLeg = (from, to) =>
-          runDetailedForPair(from, to, { corridorMapIdHint: endMapKey });
-        const leg2 = await pickBestRouteWithOptionalDoors(
-          we,
-          endLocation,
-          [],
-          linkedDoorsEnd,
-          runEndLeg
-        );
-        const d2 = leg2.detailed;
-        const l1 = d1?.path?.length ?? 0;
-        const l2 = d2?.path?.length ?? 0;
-        if (l1 === 0 || l2 === 0) continue;
-        const score =
-          l1 + l2 + crossFloorWaypointPairPenalty(ws.name, we.name);
-        if (score < bestScore) {
-          bestScore = score;
-          best = {
-            wStart: ws,
-            wEnd: we,
-            d1,
-            d2,
-            leg2PhysicalEnd: leg2.physicalEnd,
-            doorUsed: leg2.endDoorUsed
-          };
-        }
-      }
-    }
+    const parsedMaxSide = Number(process.env.CROSS_FLOOR_MAX_WAYPOINTS_PER_SIDE);
+    const maxWaypointsPerSide =
+      Number.isFinite(parsedMaxSide) && parsedMaxSide > 0 ? Math.min(Math.floor(parsedMaxSide), 40) : 8;
+
+    const parsedMaxEndDoors = Number(process.env.CROSS_FLOOR_MAX_DEST_DOORS);
+    const maxEndDoorsForCross =
+      Number.isFinite(parsedMaxEndDoors) && parsedMaxEndDoors > 0
+        ? Math.min(Math.floor(parsedMaxEndDoors), 40)
+        : 8;
+    const linkedDoorsEndCross = linkedDoorsEnd.slice(0, maxEndDoorsForCross);
+
+    const hydratedStartAll = await Promise.all(candidatesStart.map((raw) => getHydrated(raw)));
+    const hydratedEndAll = await Promise.all(candidatesEnd.map((raw) => getHydrated(raw)));
+
+    const startVertical = hydratedStartAll.filter((w) => looksLikeVerticalTransitionName(w?.name));
+    const endVertical = hydratedEndAll.filter((w) => looksLikeVerticalTransitionName(w?.name));
+    const useVerticalWaypointPools =
+      startVertical.length > 0 &&
+      endVertical.length > 0 &&
+      process.env.CROSS_FLOOR_WAYPOINTS_ALL !== '1' &&
+      process.env.CROSS_FLOOR_WAYPOINTS_ALL !== 'true';
+
+    const poolStart = useVerticalWaypointPools ? startVertical : hydratedStartAll;
+    const poolEnd = useVerticalWaypointPools ? endVertical : hydratedEndAll;
+
+    const rankedStart = rankCrossFloorWaypointCandidates(
+      poolStart,
+      startLocation,
+      maxWaypointsPerSide
+    );
+    const rankedEnd = rankCrossFloorWaypointCandidates(poolEnd, endLocation, maxWaypointsPerSide);
+
+    const searchAllCrossFloorPairs =
+      process.env.CROSS_FLOOR_SEARCH_ALL === '1' || process.env.CROSS_FLOOR_SEARCH_ALL === 'true';
+
+    const { best } = await searchBestCrossFloorPair({
+      rankedStart,
+      rankedEnd,
+      endLocation,
+      linkedDoorsEnd: linkedDoorsEndCross,
+      runDetailedFromStartToWs: (ws) =>
+        runDetailedForPairRequestCached(startLocation, ws, { corridorMapIdHint: startMapKey }),
+      runDetailedOnEndFloor: (from, to) =>
+        runDetailedForPairRequestCached(from, to, { corridorMapIdHint: endMapKey }),
+      searchAllCrossFloorPairs
+    });
 
     if (!best) {
       throw createError(
-        'No walkable cross-floor path found. Draw corridors on both floor plans so each leg can reach a transition point (stairs, lobby, etc.), and ensure those points are saved for this building.',
+        `No walkable cross-floor path found among up to ${maxWaypointsPerSide} transition candidate(s) per floor${
+          useVerticalWaypointPools
+            ? ' (only pins named like stairs/elevator on each floor — add those in Admin if missing)'
+            : ' (stairs/elevators prioritized, then nearest points)'
+        } and up to ${maxEndDoorsForCross} linked door(s) on the destination for the second leg. Draw corridors so each floor plan connects your start to a stair/elevator landing and that landing to the destination floor — or raise CROSS_FLOOR_MAX_WAYPOINTS_PER_SIDE / CROSS_FLOOR_MAX_DEST_DOORS temporarily. Set CROSS_FLOOR_WAYPOINTS_ALL=true to allow every point pin as a transition candidate (much slower). If you suspect a valid pair exists but was skipped, set CROSS_FLOOR_SEARCH_ALL=true to score every pairing (slower).`,
         404
       );
     }
 
     appendLegPoints(rawPoints, startLocation, best.wStart, best.d1);
+    crossFloorLegSplitAt = rawPoints.length;
     appendLegPoints(rawPoints, best.wEnd, best.leg2PhysicalEnd, best.d2);
     if (best.d1?.routingGraph === 'corridor' || best.d2?.routingGraph === 'corridor') {
       metaRoutingGraph = 'corridor';
@@ -532,13 +640,24 @@ export const getRoute = async (req, res) => {
     multiFloorRouteHints = [
       `On this floor plan, follow the blue line toward “${wStartLabel}”.`,
       startLooksStairs && endLooksStairs
-        ? 'Use the stairs between floors. When you reach the stairs, continue as indicated, then tap “Next Pic” on the map to open the next floor image and continue the route.'
-        : 'Use the stairs (or elevator) to change floors. When you are ready to continue indoors, tap “Next Pic” on the map to open the next floor image.',
-      `On the next floor, the route continues from “${wEndLabel}” toward your destination — follow the blue line after you tap Next Pic.`
+        ? 'Use the stairs between floors. When you reach the stairs, tap “Open … & show route” or “Next floor” (sidebar or bottom of map) to open the next floor image and continue the blue line.'
+        : 'Use the stairs (or elevator) to change floors. When you are ready to continue indoors, tap “Open … & show route” or “Next floor” to open the next floor image.',
+      `On the next floor, the route continues from “${wEndLabel}” toward your destination — follow the blue line after you switch maps.`
     ];
     if (best.doorUsed) {
       routeEndsAtDoor = { id: String(best.doorUsed._id), name: best.doorUsed.name || null };
     }
+  }
+
+  if (
+    crossFloorLegSplitAt != null &&
+    !sameMap &&
+    !usedCrossBuildingViaGround &&
+    startMapKey &&
+    endMapKey &&
+    startMapKey !== endMapKey
+  ) {
+    coerceCrossFloorLegMapIds(rawPoints, crossFloorLegSplitAt, startMapKey, endMapKey);
   }
 
   const points = rawPoints.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && p.mapId);
@@ -615,23 +734,11 @@ export const getCorridorHealth = async (req, res) => {
   });
 };
 
-function syntheticCorridorProbe(mapId, anchorXY, referenceLoc) {
-  const b = referenceLoc.building ?? referenceLoc.buildingId ?? null;
-  return {
-    mapId,
-    x: Number(anchorXY.x),
-    y: Number(anchorXY.y),
-    floor: referenceLoc.floor ?? null,
-    building: b,
-    buildingId: referenceLoc.buildingId ?? null,
-    kind: 'point',
-    name: '__corridor_reachability__'
-  };
-}
-
 /**
  * GET /api/navigation/corridor-location-reachability?mapId=floor-first
- * Lists point/door pins that cannot reach any walkable corridor component (same corridor graph as routing).
+ * Lists point/door pins that should be fixed for routing QA: (1) cannot reach the corridor walk graph
+ * from any routing sample point, or (2) every sample lies farther than `corridorQaMaxDistance` from
+ * drawn segments. Uses one pre-built corridor graph + BFS per sample (not full A* × anchors per pin).
  */
 export const getCorridorLocationReachability = async (req, res) => {
   const mapId = req.query.mapId != null ? String(req.query.mapId).trim() : '';
@@ -640,8 +747,10 @@ export const getCorridorLocationReachability = async (req, res) => {
   }
 
   const corridors = await NavigationLocation.find({ mapId, kind: 'corridor' }).lean();
-  const anchorPoints = corridorComponentRepresentatives(corridors);
-  if (anchorPoints.length === 0) {
+  const validChains = corridors.filter(
+    (c) => Array.isArray(c.corridorPoints) && c.corridorPoints.length >= 2
+  );
+  if (validChains.length === 0) {
     res.json({
       mapId,
       corridorComponentCount: 0,
@@ -654,17 +763,45 @@ export const getCorridorLocationReachability = async (req, res) => {
     return;
   }
 
+  const corridorGraphBundle = buildCorridorWalkGraph(validChains, ROUTING_GRAPH_OPTS);
+  const repVertexIds = getComponentRepresentativeVertexIds(corridorGraphBundle.adjacencyMap);
+  if (repVertexIds.length === 0) {
+    res.json({
+      mapId,
+      corridorComponentCount: 0,
+      evaluatedCount: 0,
+      unreachableCount: 0,
+      unreachable: [],
+      skipped: true,
+      reason: 'no_valid_corridor_polylines'
+    });
+    return;
+  }
+  const repTargetSet = new Set(repVertexIds);
+
+  const flatSegs = buildFlatSegmentsFromCorridors(corridors);
+  const parsedQaMax = Number(process.env.CORRIDOR_QA_MAX_DISTANCE);
+  const QA_MAX = Number.isFinite(parsedQaMax) && parsedQaMax > 0 ? parsedQaMax : 40;
+  const parsedCandCap = Number(process.env.CORRIDOR_QA_MAX_CANDIDATES);
+  const MAX_CANDS =
+    Number.isFinite(parsedCandCap) && parsedCandCap > 0 ? Math.min(parsedCandCap, 80) : 24;
+
   const locs = await NavigationLocation.find({
     mapId,
     kind: { $in: ['point', 'door'] }
   }).lean();
 
+  const nodeIds = [...new Set(locs.map((r) => r.nodeId).filter(Boolean).map((id) => String(id)))];
+  const nodes = nodeIds.length ? await Node.find({ _id: { $in: nodeIds } }).lean() : [];
+  const nodeById = new Map(nodes.map((n) => [String(n._id), n]));
+
   const unreachable = [];
   let evaluatedCount = 0;
+  let pinSeq = 0;
 
   for (const raw of locs) {
     if (raw?.name === '__corridor_reachability__') continue;
-    const loc = await hydrateNavigationLocation(raw);
+    const loc = hydrateNavigationLocationSync(raw, nodeById);
     if (!Number.isFinite(Number(loc.x)) || !Number.isFinite(Number(loc.y))) {
       unreachable.push({
         id: String(loc._id),
@@ -675,18 +812,55 @@ export const getCorridorLocationReachability = async (req, res) => {
       });
       continue;
     }
+
+    const fp = normalizeFootprintPoints(loc.footprintPoints);
+    let candidates = footprintBoundaryCandidates(fp.length >= 3 ? fp : null, {
+      x: Number(loc.x),
+      y: Number(loc.y)
+    });
+    if (candidates.length > MAX_CANDS) {
+      candidates = candidates.slice(0, MAX_CANDS);
+    }
+
+    let minDistToDrawnCorridor = Infinity;
+    if (flatSegs.length > 0) {
+      for (const c of candidates) {
+        const dist = minDistancePointToCorridorSegments(c.x, c.y, flatSegs);
+        if (dist < minDistToDrawnCorridor) minDistToDrawnCorridor = dist;
+      }
+    }
+
     evaluatedCount += 1;
-    let connected = false;
-    for (const anch of anchorPoints) {
-      const probe = syntheticCorridorProbe(mapId, anch, loc);
-      const d = await runDetailedForPair(loc, probe, { corridorMapIdHint: mapId });
-      const plen = Array.isArray(d?.path) ? d.path.length : 0;
-      if (!d?.corridorUnreachable && plen >= 2) {
-        connected = true;
+
+    const tooFarFromDrawn =
+      flatSegs.length > 0 &&
+      Number.isFinite(minDistToDrawnCorridor) &&
+      minDistToDrawnCorridor > QA_MAX;
+
+    if (tooFarFromDrawn) {
+      unreachable.push({
+        id: String(loc._id),
+        name: loc.name || null,
+        kind: loc.kind || 'point',
+        buildingId: String(loc.building || loc.buildingId || ''),
+        reason: 'far_from_drawn_corridor',
+        minDistanceToCorridor: Math.round(minDistToDrawnCorridor * 100) / 100
+      });
+      continue;
+    }
+
+    let pathConnected = false;
+    const seq = pinSeq++;
+    for (let ci = 0; ci < candidates.length; ci++) {
+      const c = candidates[ci];
+      const snapToken = `qa_${seq}_${ci}`;
+      if (pinReachableViaCorridorGraph(corridorGraphBundle, c.x, c.y, snapToken, repTargetSet)) {
+        pathConnected = true;
         break;
       }
     }
-    if (!connected) {
+
+    if (!pathConnected) {
       unreachable.push({
         id: String(loc._id),
         name: loc.name || null,
@@ -699,10 +873,62 @@ export const getCorridorLocationReachability = async (req, res) => {
 
   res.json({
     mapId,
-    corridorComponentCount: anchorPoints.length,
+    corridorComponentCount: repVertexIds.length,
     evaluatedCount,
     unreachableCount: unreachable.length,
     unreachable,
+    corridorQaMaxDistance: QA_MAX,
     skipped: false
   });
+};
+
+/**
+ * GET /api/navigation/stairs-reachability?buildingId=
+ * For every map (or one building), check that each room/door can walk the corridor graph to a
+ * stair/elevator landmark. Used before cross-building / cross-floor routes.
+ */
+export const getStairsReachabilityAudit = async (req, res) => {
+  const buildingRaw = req.query.buildingId;
+  const buildingId =
+    buildingRaw != null && String(buildingRaw).trim() !== '' ? String(buildingRaw).trim() : '';
+
+  const mapDistFilter = {};
+  if (buildingId) mapDistFilter.building = buildingId;
+
+  const mapIdsRaw = await NavigationLocation.distinct('mapId', mapDistFilter);
+  const mapIds = [...new Set(mapIdsRaw.map((m) => String(m).trim()).filter(Boolean))].sort();
+
+  const maps = [];
+  let locationsMissingStairConnection = 0;
+  let locationsChecked = 0;
+
+  for (const mid of mapIds) {
+    const row = await auditStairsReachabilityForMap(mid, buildingId || null);
+    maps.push(row);
+    locationsMissingStairConnection += row.missing?.length || 0;
+    locationsChecked += row.checkedCount || 0;
+  }
+
+  res.json({
+    buildingId: buildingId || null,
+    mapsAudited: maps.length,
+    totals: {
+      locationsChecked,
+      locationsMissingStairConnection
+    },
+    maps
+  });
+};
+
+/**
+ * GET /api/navigation/cross-floor-connectivity?buildingId=
+ * Lists room/door pins that cannot participate in a stair-linked cross-floor path: same checks as
+ * stair reachability, plus “this floor has stairs on the graph but no other floor in the building does”.
+ */
+export const getCrossFloorConnectivityAudit = async (req, res) => {
+  const buildingRaw = req.query.buildingId;
+  const buildingId =
+    buildingRaw != null && String(buildingRaw).trim() !== '' ? String(buildingRaw).trim() : '';
+  const payload = await auditCrossFloorConnectivityBuilding(buildingId || null);
+  res.json(payload);
 };

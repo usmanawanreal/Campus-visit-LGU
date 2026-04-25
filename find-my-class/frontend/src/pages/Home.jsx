@@ -167,9 +167,9 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="overflow-x-hidden bg-[#f9fafb]">
+    <div className="overflow-x-hidden bg-[#f9fafb] dark:bg-slate-950">
       {/* Hero */}
-      <section className="relative min-h-[88vh] overflow-hidden bg-hero-gradient px-4 pb-20 pt-6 sm:px-6 lg:px-8">
+      <section className="relative min-h-[88vh] overflow-hidden bg-hero-gradient px-4 pb-20 pt-6 dark:bg-hero-gradient-dark sm:px-6 lg:px-8">
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <motion.div
             animate={{ y: [0, -18, 0], rotate: [0, 4, 0] }}
@@ -200,7 +200,7 @@ export default function Home() {
             <motion.span
               variants={fadeUp}
               custom={0}
-              className="inline-flex items-center gap-2 rounded-full border border-brand-200/80 bg-white/70 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-brand-700 shadow-sm backdrop-blur-md"
+              className="inline-flex items-center gap-2 rounded-full border border-brand-200/80 bg-white/70 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-brand-700 shadow-sm backdrop-blur-md dark:border-brand-600/40 dark:bg-slate-900/80 dark:text-brand-300"
             >
               <Sparkles className="h-3.5 w-3.5" />
               Campus navigation · refined
@@ -208,7 +208,7 @@ export default function Home() {
             <motion.h1
               variants={fadeUp}
               custom={1}
-              className="font-display mt-6 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl lg:text-6xl lg:leading-[1.08]"
+              className="font-display mt-6 text-4xl font-bold tracking-tight text-gray-900 dark:text-gray-50 sm:text-5xl lg:text-6xl lg:leading-[1.08]"
             >
               Find your classroom{' '}
               <span className="bg-gradient-to-r from-brand-600 via-brand-500 to-brand-600 bg-clip-text text-transparent">
@@ -218,7 +218,7 @@ export default function Home() {
             <motion.p
               variants={fadeUp}
               custom={2}
-              className="mx-auto mt-5 max-w-2xl text-lg text-gray-600 sm:text-xl"
+              className="mx-auto mt-5 max-w-2xl text-lg text-gray-600 dark:text-gray-300 sm:text-xl"
             >
               Search rooms, explore multi-floor maps, and follow corridor-smart routes — all in one calm,
               modern experience inspired by leading travel and hiring products.
@@ -231,26 +231,26 @@ export default function Home() {
             transition={{ delay: 0.35, duration: 0.55 }}
             className="relative mx-auto mt-12 max-w-4xl"
           >
-            <div className="rounded-[1.35rem] border border-white/80 bg-white/75 p-2 shadow-xl shadow-brand-900/10 backdrop-blur-xl ring-1 ring-brand-500/10">
-              <div className="flex flex-col gap-2 rounded-2xl bg-gray-50/90 p-3 sm:flex-row sm:items-stretch">
-                <label className="relative flex flex-1 items-center gap-3 rounded-xl border border-gray-200/80 bg-white px-4 py-3 shadow-sm transition focus-within:border-brand-400 focus-within:ring-4 focus-within:ring-brand-500/15">
+            <div className="rounded-[1.35rem] border border-white/80 bg-white/75 p-2 shadow-xl shadow-brand-900/10 backdrop-blur-xl ring-1 ring-brand-500/10 dark:border-slate-700/80 dark:bg-slate-900/85 dark:ring-brand-500/20">
+              <div className="flex flex-col gap-2 rounded-2xl bg-gray-50/90 p-3 dark:bg-slate-950/90 sm:flex-row sm:items-stretch">
+                <label className="relative flex flex-1 items-center gap-3 rounded-xl border border-gray-200/80 bg-white px-4 py-3 shadow-sm transition focus-within:border-brand-400 focus-within:ring-4 focus-within:ring-brand-500/15 dark:border-slate-600 dark:bg-slate-800 dark:focus-within:border-brand-500">
                   <Briefcase className="h-5 w-5 shrink-0 text-brand-500" aria-hidden />
                   <input
                     type="text"
                     placeholder="Room, lab, or place…"
                     value={jobQuery}
                     onChange={(e) => setJobQuery(e.target.value)}
-                    className="min-w-0 flex-1 border-0 bg-transparent text-gray-900 outline-none placeholder:text-gray-400"
+                    className="min-w-0 flex-1 border-0 bg-transparent text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100 dark:placeholder:text-gray-500"
                   />
                 </label>
-                <label className="relative flex flex-1 items-center gap-3 rounded-xl border border-gray-200/80 bg-white px-4 py-3 shadow-sm transition focus-within:border-brand-400 focus-within:ring-4 focus-within:ring-brand-500/15">
+                <label className="relative flex flex-1 items-center gap-3 rounded-xl border border-gray-200/80 bg-white px-4 py-3 shadow-sm transition focus-within:border-brand-400 focus-within:ring-4 focus-within:ring-brand-500/15 dark:border-slate-600 dark:bg-slate-800 dark:focus-within:border-brand-500">
                   <MapPin className="h-5 w-5 shrink-0 text-brand-500" aria-hidden />
                   <input
                     type="text"
                     placeholder="Building or area…"
                     value={locQuery}
                     onChange={(e) => setLocQuery(e.target.value)}
-                    className="min-w-0 flex-1 border-0 bg-transparent text-gray-900 outline-none placeholder:text-gray-400"
+                    className="min-w-0 flex-1 border-0 bg-transparent text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100 dark:placeholder:text-gray-500"
                   />
                 </label>
                 <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="sm:w-auto">
@@ -264,7 +264,7 @@ export default function Home() {
                 </motion.div>
               </div>
             </div>
-            <p className="mt-4 text-center text-sm text-gray-500">
+            <p className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
               Tip: Use Search for room numbers — open the Map for full indoor routing.
             </p>
           </motion.div>
@@ -278,7 +278,7 @@ export default function Home() {
             <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }}>
               <Link
                 to="/search"
-                className="inline-flex items-center gap-2 rounded-full bg-gray-900 px-8 py-3.5 text-sm font-semibold text-white shadow-lg transition hover:bg-gray-800"
+                className="inline-flex items-center gap-2 rounded-full bg-gray-900 px-8 py-3.5 text-sm font-semibold text-white shadow-lg transition hover:bg-gray-800 dark:bg-brand-600 dark:hover:bg-brand-500"
               >
                 Find rooms
                 <ArrowRight className="h-4 w-4" />
@@ -287,7 +287,7 @@ export default function Home() {
             <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }}>
               <Link
                 to="/map"
-                className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-8 py-3.5 text-sm font-semibold text-gray-800 shadow-md transition hover:border-brand-200 hover:text-brand-700"
+                className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-8 py-3.5 text-sm font-semibold text-gray-800 shadow-md transition hover:border-brand-200 hover:text-brand-700 dark:border-slate-600 dark:bg-slate-800 dark:text-gray-100 dark:hover:border-brand-500 dark:hover:text-brand-400"
               >
                 Open map
               </Link>
@@ -297,7 +297,7 @@ export default function Home() {
       </section>
 
       {/* Features */}
-      <section id="about-section" className="scroll-mt-28 px-4 py-20 sm:px-6 lg:px-8">
+      <section id="about-section" className="scroll-mt-28 px-4 py-20 dark:bg-slate-950 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
           <motion.div
             initial={{ opacity: 0, y: 16 }}
@@ -305,8 +305,8 @@ export default function Home() {
             viewport={{ once: true, margin: '-60px' }}
             className="mx-auto max-w-2xl text-center"
           >
-            <h2 className="font-display text-3xl font-bold text-gray-900 sm:text-4xl">Why teams choose it</h2>
-            <p className="mt-3 text-gray-600">
+            <h2 className="font-display text-3xl font-bold text-gray-900 dark:text-gray-50 sm:text-4xl">Why teams choose it</h2>
+            <p className="mt-3 text-gray-600 dark:text-gray-400">
               Purpose-built flows for campuses: fast discovery, credible paths, calm visual design.
             </p>
           </motion.div>
@@ -319,7 +319,7 @@ export default function Home() {
                 viewport={{ once: true, margin: '-40px' }}
                 transition={{ delay: i * 0.07, duration: 0.45 }}
                 whileHover={{ y: -8, transition: { duration: 0.25 } }}
-                className="group relative overflow-hidden rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-lg shadow-gray-900/5 backdrop-blur-sm transition hover:border-brand-200/80 hover:shadow-xl"
+                className="group relative overflow-hidden rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-lg shadow-gray-900/5 backdrop-blur-sm transition hover:border-brand-200/80 hover:shadow-xl dark:border-slate-700 dark:bg-slate-900/95 dark:shadow-black/30 dark:hover:border-brand-600/50"
               >
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-brand-500/0 via-brand-500/0 to-brand-500/[0.07] opacity-0 transition group-hover:opacity-100" />
                 <div className="relative">
@@ -330,8 +330,8 @@ export default function Home() {
                   >
                     <Icon className="h-6 w-6" />
                   </motion.span>
-                  <h3 className="mt-4 font-display text-lg font-semibold text-gray-900">{title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-gray-600">{desc}</p>
+                  <h3 className="mt-4 font-display text-lg font-semibold text-gray-900 dark:text-gray-100">{title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">{desc}</p>
                 </div>
               </motion.article>
             ))}
@@ -340,16 +340,16 @@ export default function Home() {
       </section>
 
       {/* Job-style listing + filters */}
-      <section id="jobs-section" className="scroll-mt-28 bg-white px-4 py-20 sm:px-6 lg:px-8">
+      <section id="jobs-section" className="scroll-mt-28 bg-white px-4 py-20 dark:bg-slate-900 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
           <div className="flex flex-col gap-10 lg:flex-row lg:gap-14">
             <aside className="lg:w-72 lg:shrink-0">
-              <div className="sticky top-28 rounded-3xl border border-gray-100 bg-gray-50/90 p-6 shadow-inner backdrop-blur-md">
-                <h3 className="font-display text-lg font-semibold text-gray-900">Filters</h3>
-                <p className="mt-1 text-xs text-gray-500">Demo filters — refine the sample cards below.</p>
+              <div className="sticky top-28 rounded-3xl border border-gray-100 bg-gray-50/90 p-6 shadow-inner backdrop-blur-md dark:border-slate-700 dark:bg-slate-800/90">
+                <h3 className="font-display text-lg font-semibold text-gray-900 dark:text-gray-100">Filters</h3>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Demo filters — refine the sample cards below.</p>
                 <div className="mt-6 space-y-4">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Category</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Category</p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {categories.map((c) => (
                         <button
@@ -359,7 +359,7 @@ export default function Home() {
                           className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
                             category === c
                               ? 'bg-brand-600 text-white shadow-md shadow-brand-600/25'
-                              : 'bg-white text-gray-600 ring-1 ring-gray-200 hover:ring-brand-200'
+                              : 'bg-white text-gray-600 ring-1 ring-gray-200 hover:ring-brand-200 dark:bg-slate-900 dark:text-gray-300 dark:ring-slate-600 dark:hover:ring-brand-500'
                           }`}
                         >
                           {c}
@@ -368,10 +368,10 @@ export default function Home() {
                     </div>
                   </div>
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Salary</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Salary</p>
                     <input type="range" min="0" max="100" defaultValue="60" className="mt-3 w-full accent-brand-600" />
                   </div>
-                  <div className="rounded-xl bg-white/80 p-3 text-xs text-gray-600 ring-1 ring-gray-100">
+                  <div className="rounded-xl bg-white/80 p-3 text-xs text-gray-600 ring-1 ring-gray-100 dark:bg-slate-900/80 dark:text-gray-400 dark:ring-slate-700">
                     Job type & experience filters are visual demos on this landing page — Search and Map keep full
                     functionality.
                   </div>
@@ -381,10 +381,10 @@ export default function Home() {
             <div className="min-w-0 flex-1">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <h2 className="font-display text-3xl font-bold text-gray-900">Featured spaces</h2>
-                  <p className="mt-2 text-gray-600">Campus-themed cards — tap through to the map experience.</p>
+                  <h2 className="font-display text-3xl font-bold text-gray-900 dark:text-gray-50">Featured spaces</h2>
+                  <p className="mt-2 text-gray-600 dark:text-gray-400">Campus-themed cards — tap through to the map experience.</p>
                 </div>
-                <Link to="/map" className="text-sm font-semibold text-brand-600 hover:text-brand-700">
+                <Link to="/map" className="text-sm font-semibold text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300">
                   View full map →
                 </Link>
               </div>
@@ -397,16 +397,16 @@ export default function Home() {
                     viewport={{ once: true }}
                     transition={{ delay: i * 0.05 }}
                     whileHover={{ y: -6 }}
-                    className="group relative overflow-hidden rounded-3xl border border-gray-100 bg-white p-6 shadow-lg shadow-gray-900/5 transition hover:border-brand-100 hover:shadow-xl"
+                    className="group relative overflow-hidden rounded-3xl border border-gray-100 bg-white p-6 shadow-lg shadow-gray-900/5 transition hover:border-brand-100 hover:shadow-xl dark:border-slate-700 dark:bg-slate-800 dark:shadow-black/25 dark:hover:border-brand-700"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-2xl shadow-inner">
+                        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-2xl shadow-inner dark:bg-slate-700">
                           {job.logo}
                         </span>
                         <div>
                           <p className="text-xs font-medium text-brand-600">{job.company}</p>
-                          <h3 className="font-display font-semibold text-gray-900">{job.title}</h3>
+                          <h3 className="font-display font-semibold text-gray-900 dark:text-gray-100">{job.title}</h3>
                         </div>
                       </div>
                       <motion.button
@@ -418,18 +418,18 @@ export default function Home() {
                             [job.id]: !s[job.id]
                           }))
                         }
-                        className="rounded-full p-2 text-gray-400 transition hover:bg-rose-50 hover:text-rose-500"
+                        className="rounded-full p-2 text-gray-400 transition hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-slate-700"
                         aria-label="Save"
                       >
                         <Heart className={`h-5 w-5 ${saved[job.id] ? 'fill-rose-500 text-rose-500' : ''}`} />
                       </motion.button>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                      <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-700">{job.type}</span>
-                      <span className="rounded-full bg-brand-50 px-2.5 py-1 font-medium text-brand-800">{job.salary}</span>
-                      <span className="rounded-full border border-gray-100 px-2.5 py-1 text-gray-600">{job.exp}</span>
+                      <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-700 dark:bg-slate-700 dark:text-gray-200">{job.type}</span>
+                      <span className="rounded-full bg-brand-50 px-2.5 py-1 font-medium text-brand-800 dark:bg-brand-900/50 dark:text-brand-200">{job.salary}</span>
+                      <span className="rounded-full border border-gray-100 px-2.5 py-1 text-gray-600 dark:border-slate-600 dark:text-gray-400">{job.exp}</span>
                     </div>
-                    <p className="mt-3 flex items-center gap-1.5 text-sm text-gray-500">
+                    <p className="mt-3 flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
                       <MapPin className="h-4 w-4 shrink-0 text-brand-500" />
                       {job.location}
                     </p>
@@ -451,15 +451,15 @@ export default function Home() {
       </section>
 
       {/* Partner strip — auto-infinite feel via duplicated row + CSS marquee */}
-      <section className="border-y border-gray-100 bg-[#f9fafb] py-12">
-        <p className="text-center text-xs font-semibold uppercase tracking-widest text-gray-400">Campus partners</p>
+      <section className="border-y border-gray-100 bg-[#f9fafb] py-12 dark:border-slate-800 dark:bg-slate-950">
+        <p className="text-center text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">Campus partners</p>
         <div className="relative mt-8 overflow-hidden">
           <div className="flex w-max animate-marquee gap-12 pr-12">
             {[...partners, ...partners].map((name, i) => (
               <motion.span
                 key={`${name}-${i}`}
                 whileHover={{ scale: 1.05 }}
-                className="flex shrink-0 items-center gap-2 whitespace-nowrap font-display text-lg font-semibold text-gray-400"
+                className="flex shrink-0 items-center gap-2 whitespace-nowrap font-display text-lg font-semibold text-gray-400 dark:text-gray-500"
               >
                 <Building2 className="h-6 w-6 text-brand-500/50" />
                 {name}
@@ -470,8 +470,8 @@ export default function Home() {
       </section>
 
       {/* Stats */}
-      <section id="stats-section" className="px-4 py-20 sm:px-6 lg:px-8">
-        <div className="mx-auto grid max-w-7xl gap-8 rounded-[2rem] border border-gray-100 bg-gradient-to-br from-white via-brand-50/40 to-white px-8 py-14 shadow-xl shadow-brand-900/5 sm:grid-cols-2 lg:grid-cols-4">
+      <section id="stats-section" className="px-4 py-20 dark:bg-slate-950 sm:px-6 lg:px-8">
+        <div className="mx-auto grid max-w-7xl gap-8 rounded-[2rem] border border-gray-100 bg-gradient-to-br from-white via-brand-50/40 to-white px-8 py-14 shadow-xl shadow-brand-900/5 dark:border-slate-700 dark:from-slate-900 dark:via-slate-900/95 dark:to-slate-950 dark:shadow-black/30 sm:grid-cols-2 lg:grid-cols-4">
           {[
             { label: 'Rooms indexed', value: 1200, suffix: '+' },
             { label: 'Buildings', value: 24, suffix: '' },
@@ -485,40 +485,40 @@ export default function Home() {
               viewport={{ once: true }}
               className="text-center"
             >
-              <p className="font-display text-4xl font-bold text-gray-900 sm:text-5xl">
+              <p className="font-display text-4xl font-bold text-gray-900 dark:text-gray-50 sm:text-5xl">
                 <AnimatedCounter target={s.value} suffix={s.suffix} />
               </p>
-              <p className="mt-2 text-sm font-medium text-gray-600">{s.label}</p>
+              <p className="mt-2 text-sm font-medium text-gray-600 dark:text-gray-400">{s.label}</p>
             </motion.div>
           ))}
         </div>
       </section>
 
       {/* Testimonials */}
-      <section className="px-4 pb-24 sm:px-6 lg:px-8">
+      <section className="px-4 pb-24 dark:bg-slate-950 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
-          <h2 className="text-center font-display text-3xl font-bold text-gray-900">Loved by students & staff</h2>
+          <h2 className="text-center font-display text-3xl font-bold text-gray-900 dark:text-gray-50">Loved by students & staff</h2>
           <div className="relative mx-auto mt-12 max-w-3xl">
             <motion.div
               key={testimonialIdx}
               initial={{ opacity: 0, x: 16 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.35 }}
-              className="rounded-[1.75rem] border border-white/60 bg-white/70 p-8 shadow-xl shadow-brand-900/10 backdrop-blur-xl"
+              className="rounded-[1.75rem] border border-white/60 bg-white/70 p-8 shadow-xl shadow-brand-900/10 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/90 dark:shadow-black/40"
             >
               <div className="flex gap-1">
                 {Array.from({ length: testimonials[testimonialIdx].rating }).map((_, i) => (
                   <Star key={i} className="h-5 w-5 fill-amber-400 text-amber-400" />
                 ))}
               </div>
-              <p className="mt-5 text-lg leading-relaxed text-gray-700">{testimonials[testimonialIdx].text}</p>
+              <p className="mt-5 text-lg leading-relaxed text-gray-700 dark:text-gray-300">{testimonials[testimonialIdx].text}</p>
               <div className="mt-6 flex items-center gap-4">
                 <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-600 font-display font-bold text-white shadow-lg">
                   {testimonials[testimonialIdx].avatar}
                 </span>
                 <div>
-                  <p className="font-semibold text-gray-900">{testimonials[testimonialIdx].name}</p>
-                  <p className="text-sm text-gray-500">{testimonials[testimonialIdx].role}</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-100">{testimonials[testimonialIdx].name}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{testimonials[testimonialIdx].role}</p>
                 </div>
               </div>
             </motion.div>
@@ -528,7 +528,7 @@ export default function Home() {
                   key={i}
                   type="button"
                   onClick={() => setTestimonialIdx(i)}
-                  className={`h-2 rounded-full transition-all ${i === testimonialIdx ? 'w-8 bg-brand-600' : 'w-2 bg-gray-300'}`}
+                  className={`h-2 rounded-full transition-all ${i === testimonialIdx ? 'w-8 bg-brand-600' : 'w-2 bg-gray-300 dark:bg-slate-600'}`}
                   aria-label={`Slide ${i + 1}`}
                 />
               ))}
@@ -577,11 +577,11 @@ export default function Home() {
       </section>
 
       {/* Mobile sticky CTA */}
-      <div className="fixed inset-x-0 bottom-0 z-50 flex gap-3 border-t border-gray-200 bg-white/95 p-3 backdrop-blur-xl md:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-50 flex gap-3 border-t border-gray-200 bg-white/95 p-3 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-950/95 md:hidden">
         <Link to="/search" className="flex flex-1 items-center justify-center rounded-full bg-brand-600 py-3 text-sm font-semibold text-white shadow-lg">
           Search
         </Link>
-        <Link to="/map" className="flex flex-1 items-center justify-center rounded-full border border-gray-200 bg-white py-3 text-sm font-semibold text-gray-800">
+        <Link to="/map" className="flex flex-1 items-center justify-center rounded-full border border-gray-200 bg-white py-3 text-sm font-semibold text-gray-800 dark:border-slate-600 dark:bg-slate-800 dark:text-gray-100">
           Map
         </Link>
       </div>

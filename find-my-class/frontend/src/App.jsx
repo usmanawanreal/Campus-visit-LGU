@@ -4,7 +4,7 @@ import ProtectedRoute from './components/ProtectedRoute.jsx';
 import Home from './pages/Home.jsx';
 import SearchClassroom from './pages/SearchClassroom.jsx';
 import MapPage from './pages/MapPage.jsx';
-import AdminLogin from './pages/AdminLogin.jsx';
+import Login from './pages/Login.jsx';
 import AdminDashboard from './pages/AdminDashboard.jsx';
 
 function App() {
@@ -14,8 +14,9 @@ function App() {
         <Route index element={<Home />} />
         <Route path="search" element={<SearchClassroom />} />
         <Route path="map" element={<MapPage />} />
+        <Route path="login" element={<Login />} />
         <Route path="admin">
-          <Route path="login" element={<AdminLogin />} />
+          <Route path="login" element={<Navigate to="/login" replace />} />
           <Route path="dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -20,7 +20,9 @@ function signToken(user) {
 }
 
 export const register = async (req, res) => {
-  const { name, email, password, role } = req.body;
+  const { name, email, password } = req.body;
+  /** Public sign-up always creates a normal user; admin accounts are not created via this endpoint. */
+  const role = 'user';
   const existing = await AdminUser.findOne({ email: String(email).trim().toLowerCase() });
   if (existing) {
     throw createError('Email already registered', 400);
@@ -30,7 +32,7 @@ export const register = async (req, res) => {
     name: String(name).trim(),
     email: String(email).trim().toLowerCase(),
     password: hashedPassword,
-    role: String(role).trim()
+    role
   });
   const token = signToken(user);
   res.status(201).json({

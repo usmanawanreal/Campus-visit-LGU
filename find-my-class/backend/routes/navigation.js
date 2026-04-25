@@ -7,6 +7,8 @@ import { validateIdParam } from '../middleware/validate.js';
 import {
   validateNavigationRouteQuery,
   validateCorridorHealthQuery,
+  validateStairsReachabilityQuery,
+  validateCrossFloorConnectivityQuery,
   validateNavigationLocationQuery,
   validateNavigationLocationCreate
 } from '../middleware/validators.js';
@@ -23,6 +25,16 @@ router.get(
   '/corridor-location-reachability',
   validateCorridorHealthQuery,
   asyncHandler(navigationController.getCorridorLocationReachability)
+);
+router.get(
+  '/stairs-reachability',
+  validateStairsReachabilityQuery,
+  asyncHandler(navigationController.getStairsReachabilityAudit)
+);
+router.get(
+  '/cross-floor-connectivity',
+  validateCrossFloorConnectivityQuery,
+  asyncHandler(navigationController.getCrossFloorConnectivityAudit)
 );
 router.get('/locations', validateNavigationLocationQuery, asyncHandler(navigationLocationController.list));
 router.post('/locations', protectAdmin, validateNavigationLocationCreate, asyncHandler(navigationLocationController.create));

@@ -5,7 +5,8 @@
 
 import {
   rankCorridorSegmentSnaps,
-  attachSnapOnCorridorSegment
+  attachSnapOnCorridorSegment,
+  detachEphemeralSnapNode
 } from '../services/corridorWalkGraph.js';
 import { pathIdsStayNearSavedCorridorSegments } from './corridorPathGeometry.js';
 
@@ -69,6 +70,9 @@ export function graphPathLength(adjacencyMap, pathIds) {
  * Tries several nearest corridor segments for start/end (not only the closest projection).
  * Snapping to the single nearest segment often locks A* onto a longer branch.
  *
+ * OPTIMISED: builds the corridor graph **once**, then uses attach/detach for each
+ * snap-pair instead of rebuilding the O(n²) graph in the innermost loop.
+ *
  * @param {Function} buildGraph - () => { nodeMap, adjacencyMap, nodeDetailsById, segments }
  * @param {Function} runAStar - (adjacencyMap, nodeMap, startId, endId) => string[]|null
  * @param {{ segmentSnapK?: number }} [options]
@@ -88,93 +92,85 @@ export function bestPathOverFootprintPairs(
     else segmentSnapK = 7;
   }
 
+  /* ── Build the corridor walk graph ONCE ── */
+  const baseGraph = buildGraph();
+  if (!baseGraph.segments.length) return null;
+  const { nodeMap, adjacencyMap, nodeDetailsById, segments } = baseGraph;
+
+  const geomSegs = options.corridorGeometrySegments;
+  const geomMax = options.corridorPathMaxDeviation;
+  const doGeomCheck = Array.isArray(geomSegs) && geomSegs.length > 0 && Number.isFinite(geomMax);
+
   let best = null;
   let bestTotal = Infinity;
   let snapCounter = 0;
 
   for (const s of startCandidates) {
-    const gRank = buildGraph();
-    if (!gRank.segments.length) continue;
-    const rankedS = rankCorridorSegmentSnaps(
-      gRank.segments,
-      gRank.nodeMap,
-      s,
-      segmentSnapK
-    );
+    const rankedS = rankCorridorSegmentSnaps(segments, nodeMap, s, segmentSnapK);
     if (!rankedS.length) continue;
 
     for (const e of endCandidates) {
-      const rankedE = rankCorridorSegmentSnaps(
-        gRank.segments,
-        gRank.nodeMap,
-        e,
-        segmentSnapK
-      );
+      const rankedE = rankCorridorSegmentSnaps(segments, nodeMap, e, segmentSnapK);
       if (!rankedE.length) continue;
 
       for (const rs of rankedS) {
         for (const re of rankedE) {
-          const { nodeMap, adjacencyMap, nodeDetailsById, segments } = buildGraph();
-          if (!segments.length) continue;
-
           const sid = `__snap_start_${snapCounter++}__`;
           const eid = `__snap_end_${snapCounter++}__`;
+
+          /* Attach two temporary snap nodes on the shared graph */
           attachSnapOnCorridorSegment(
-            nodeMap,
-            adjacencyMap,
-            nodeDetailsById,
-            sid,
-            rs.a,
-            rs.b,
-            rs.proj,
-            true
+            nodeMap, adjacencyMap, nodeDetailsById,
+            sid, rs.a, rs.b, rs.proj, true
           );
           attachSnapOnCorridorSegment(
-            nodeMap,
-            adjacencyMap,
-            nodeDetailsById,
-            eid,
-            re.a,
-            re.b,
-            re.proj,
-            false
+            nodeMap, adjacencyMap, nodeDetailsById,
+            eid, re.a, re.b, re.proj, false
           );
 
           const pathIds = runAStar(adjacencyMap, nodeMap, sid, eid);
-          if (!pathIds?.length) continue;
 
-          const geomSegs = options.corridorGeometrySegments;
-          const geomMax = options.corridorPathMaxDeviation;
-          if (Array.isArray(geomSegs) && geomSegs.length > 0 && Number.isFinite(geomMax)) {
-            if (!pathIdsStayNearSavedCorridorSegments(pathIds, nodeMap, geomSegs, geomMax)) {
-              continue;
+          let accepted = false;
+          if (pathIds?.length) {
+            let geomOk = true;
+            if (doGeomCheck) {
+              if (!pathIdsStayNearSavedCorridorSegments(pathIds, nodeMap, geomSegs, geomMax)) {
+                geomOk = false;
+              }
+            }
+
+            if (geomOk) {
+              const snapS = nodeMap.get(sid);
+              const snapE = nodeMap.get(eid);
+              if (snapS && snapE) {
+                const entry = euclidean(s, snapS);
+                const mid = graphPathLength(adjacencyMap, pathIds);
+                const exit = euclidean(e, snapE);
+                if (Number.isFinite(mid) && mid !== Infinity) {
+                  const OFF_CORRIDOR_PENALTY = 5;
+                  const total = mid + OFF_CORRIDOR_PENALTY * (entry + exit);
+                  if (total < bestTotal) {
+                    bestTotal = total;
+                    /* Snapshot snap-node details before detach so final path resolves */
+                    accepted = true;
+                    best = {
+                      pathIds: [...pathIds],
+                      startAnchor: { x: snapS.x, y: snapS.y },
+                      endAnchor: { x: snapE.x, y: snapE.y },
+                      snapNodeDetails: new Map([
+                        [sid, { ...nodeDetailsById.get(sid) }],
+                        [eid, { ...nodeDetailsById.get(eid) }]
+                      ])
+                    };
+                  }
+                }
+              }
             }
           }
 
-          const snapS = nodeMap.get(sid);
-          const snapE = nodeMap.get(eid);
-          if (!snapS || !snapE) continue;
-
-          const entry = euclidean(s, snapS);
-          const mid = graphPathLength(adjacencyMap, pathIds);
-          const exit = euclidean(e, snapE);
-          if (!Number.isFinite(mid) || mid === Infinity) continue;
-
-          const OFF_CORRIDOR_PENALTY = 5;
-          const total = mid + OFF_CORRIDOR_PENALTY * (entry + exit);
-          if (total < bestTotal) {
-            bestTotal = total;
-            best = {
-              pathIds,
-              nodeMap,
-              nodeDetailsById,
-              /** Snap points on the corridor polyline — NOT room centers (those draw through walls). */
-              startAnchor: { x: snapS.x, y: snapS.y },
-              endAnchor: { x: snapE.x, y: snapE.y },
-              startSnapId: sid,
-              endSnapId: eid
-            };
-          }
+          /* Detach snap nodes — restores baseGraph to its original state */
+          detachEphemeralSnapNode(adjacencyMap, nodeMap, nodeDetailsById, sid);
+          detachEphemeralSnapNode(adjacencyMap, nodeMap, nodeDetailsById, eid);
         }
       }
     }
@@ -182,8 +178,9 @@ export function bestPathOverFootprintPairs(
 
   if (!best) return null;
 
+  /* Resolve final path — corridor nodes from nodeDetailsById, snap nodes from snapshot */
   const path = best.pathIds
-    .map((id) => best.nodeDetailsById.get(String(id)))
+    .map((id) => nodeDetailsById.get(String(id)) || best.snapNodeDetails.get(String(id)))
     .filter(Boolean);
 
   return {

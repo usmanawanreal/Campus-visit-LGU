@@ -277,3 +277,23 @@ export function attachPointToCorridorGraph(
     token === 'start'
   );
 }
+
+/**
+ * Undo {@link attachPointToCorridorGraph} / attachSnapOnCorridorSegment for a one-off QA snap id.
+ */
+export function detachEphemeralSnapNode(adjacencyMap, nodeMap, nodeDetailsById, snapId) {
+  if (!snapId) return;
+  const nbrs = adjacencyMap.get(snapId);
+  if (nbrs?.length) {
+    for (const e of nbrs) {
+      const list = adjacencyMap.get(e.to);
+      if (!list?.length) continue;
+      const filtered = list.filter((x) => x.to !== snapId);
+      if (filtered.length) adjacencyMap.set(e.to, filtered);
+      else adjacencyMap.delete(e.to);
+    }
+  }
+  adjacencyMap.delete(snapId);
+  nodeMap.delete(snapId);
+  if (nodeDetailsById) nodeDetailsById.delete(snapId);
+}

@@ -89,20 +89,64 @@ function normalizedMapId(mapId) {
   return s === '' ? null : s;
 }
 
+/** Short TTL cache of lean corridor docs per mapId — routing calls loadCorridors dozens of times per request. */
+const corridorLeanCache = new Map(); // mapId → { ts: number, rows: [] }
+const CORRIDOR_LEAN_CACHE_TTL_MS =
+  Number(process.env.CORRIDOR_LEAN_CACHE_TTL_MS) > 0
+    ? Number(process.env.CORRIDOR_LEAN_CACHE_TTL_MS)
+    : 45000;
+
+/**
+ * Short-TTL cache of the built corridor walk graph per mapId+floor-set.
+ * Cross-floor routing fires ~16 pathfinding calls on 2 floors — all sharing
+ * the same corridor polylines.  Building the O(n²) graph once instead of 16×
+ * is the single largest win for cross-floor requests.
+ *
+ * Safe to share because bestPathOverFootprintPairs now properly attaches/
+ * detaches snap nodes (never leaks state between callers).
+ */
+const corridorGraphCache = new Map(); // cacheKey → { ts, graph }
+const CORRIDOR_GRAPH_CACHE_TTL_MS =
+  Number(process.env.CORRIDOR_GRAPH_CACHE_TTL_MS) > 0
+    ? Number(process.env.CORRIDOR_GRAPH_CACHE_TTL_MS)
+    : 30000;
+
+function getCachedCorridorGraph(corridors, graphOpts, cacheKey) {
+  const now = Date.now();
+  const cached = corridorGraphCache.get(cacheKey);
+  if (cached && now - cached.ts < CORRIDOR_GRAPH_CACHE_TTL_MS) {
+    return cached.graph;
+  }
+  const graph = buildCorridorWalkGraph(corridors, graphOpts);
+  corridorGraphCache.set(cacheKey, { ts: now, graph });
+  return graph;
+}
+
 export async function loadCorridorsForMap(options = {}) {
   const mapId = normalizedMapId(options.mapId);
   if (!mapId) return [];
 
-  let corridors = await NavigationLocation.find({ mapId, kind: 'corridor' }).lean();
-  if (!corridors?.length) return [];
-
   const endMap = normalizedMapId(options.endMapId);
-  // One floor image: use every corridor on that mapId (omit endMapId when unknown).
   const sameFloorPlanImage = !endMap || endMap === mapId;
 
-  // Same PNG: never drop corridors by mismatched `floor` fields (room vs corridor labels).
+  let corridors;
   if (sameFloorPlanImage) {
-    return corridors;
+    const cached = corridorLeanCache.get(mapId);
+    const now = Date.now();
+    if (
+      cached &&
+      Array.isArray(cached.rows) &&
+      now - cached.ts < CORRIDOR_LEAN_CACHE_TTL_MS
+    ) {
+      corridors = cached.rows;
+    } else {
+      corridors = await NavigationLocation.find({ mapId, kind: 'corridor' }).lean();
+      corridorLeanCache.set(mapId, { ts: now, rows: corridors || [] });
+      if (!corridors?.length) return [];
+    }
+  } else {
+    corridors = await NavigationLocation.find({ mapId, kind: 'corridor' }).lean();
+    if (!corridors?.length) return [];
   }
 
   const want = new Set();
@@ -164,12 +208,17 @@ async function tryCorridorPathfinding(startPoint, endPoint, options = {}) {
     mergeCoincidentMax: Number(options.mergeCoincidentMax) || 4
   };
 
+  /* Build (or reuse cached) corridor walk graph — O(n²) build only once per mapId+floor */
+  const floorKey = options.floor != null ? String(options.floor) : '_';
+  const endFloorKey = options.endFloor != null ? String(options.endFloor) : '_';
+  const graphCacheKey = `${mapId}|${floorKey}|${endFloorKey}`;
+
   const flatSegs = buildFlatSegmentsFromCorridors(corridors);
   const pathGeomMax = Number(options.corridorPathMaxDeviation);
   const corridorPathMaxDeviation = Number.isFinite(pathGeomMax) ? pathGeomMax : 18;
 
   const best = bestPathOverFootprintPairs(
-    () => buildCorridorWalkGraph(corridors, graphOpts),
+    () => getCachedCorridorGraph(corridors, graphOpts, graphCacheKey),
     (adj, nm, a, b) => aStarShortestPath(adj, nm, a, b),
     startCands,
     endCands,

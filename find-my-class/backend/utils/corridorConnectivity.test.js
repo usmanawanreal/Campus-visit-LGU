@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { buildCorridorWalkGraph } from '../services/corridorWalkGraph.js';
 import {
   analyzeCorridorConnectivity,
-  corridorComponentRepresentatives
+  corridorComponentRepresentatives,
+  getComponentRepresentativeVertexIds,
+  ROUTING_GRAPH_OPTS
 } from './corridorConnectivity.js';
 
 const opts = { crossCorridorEndpointMergeMax: 10, mergeCoincidentMax: 4 };
@@ -62,6 +65,30 @@ test('corridorComponentRepresentatives: one component → one anchor', () => {
   const reps = corridorComponentRepresentatives(corridors, opts);
   assert.equal(reps.length, 1);
   assert.ok(Number.isFinite(reps[0].x) && Number.isFinite(reps[0].y));
+});
+
+test('getComponentRepresentativeVertexIds: two far chains → two vertex ids', () => {
+  const corridors = [
+    {
+      _id: 'a',
+      name: 'East',
+      corridorPoints: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 }
+      ]
+    },
+    {
+      _id: 'b',
+      name: 'West',
+      corridorPoints: [
+        { x: 500, y: 500 },
+        { x: 510, y: 500 }
+      ]
+    }
+  ];
+  const { adjacencyMap } = buildCorridorWalkGraph(corridors, opts);
+  const ids = getComponentRepresentativeVertexIds(adjacencyMap);
+  assert.equal(ids.length, 2);
 });
 
 test('corridorComponentRepresentatives: two far chains → two anchors', () => {

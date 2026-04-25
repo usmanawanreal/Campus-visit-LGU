@@ -69,7 +69,7 @@ export function validateQuery(rules) {
       if (rule.required && (value === undefined || value === null || value === '')) {
         return next(validationError(rule.message || `${rule.key} is required`));
       }
-      if (value === undefined || value === null) continue;
+      if (value === undefined || value === null || value === '') continue;
       if (rule.type === 'string' && typeof value !== 'string') {
         return next(validationError(rule.message || `${rule.key} must be a string`));
       }

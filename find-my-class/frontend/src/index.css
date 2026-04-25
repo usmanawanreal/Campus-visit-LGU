@@ -7,15 +7,35 @@
   --color-bg: #f9fafb;
   --color-surface: #ffffff;
   --color-surface-hover: #f3f4f6;
+  --color-surface-muted: #f3f4f6;
   --color-border: #e5e7eb;
   --color-primary: #10b981;
   --color-primary-hover: #059669;
   --color-text: #111827;
   --color-text-muted: #6b7280;
   --color-success: #10b981;
-  --color-danger: #ef4444;
+  --color-danger: #f87171;
   --radius: 12px;
   --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+}
+
+.dark {
+  --color-bg: #0f172a;
+  --color-surface: #1e293b;
+  --color-surface-hover: #334155;
+  --color-surface-muted: #1e293b;
+  --color-border: #334155;
+  --color-primary: #34d399;
+  --color-primary-hover: #10b981;
+  --color-text: #f1f5f9;
+  --color-text-muted: #94a3b8;
+  --color-success: #34d399;
+  --color-danger: #f87171;
+  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.35), 0 2px 4px -2px rgb(0 0 0 / 0.22);
+}
+
+.dark .input:focus {
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.28);
 }
 
 *,
@@ -383,20 +403,65 @@ input, select, textarea {
 
 .map-floor-step-float {
   position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
+  left: 50%;
+  right: auto;
+  bottom: 14px;
+  top: auto;
+  transform: translateX(-50%);
   z-index: 650;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
   gap: 0.5rem;
-  align-items: stretch;
+  align-items: flex-end;
+  justify-content: center;
   pointer-events: auto;
+  padding: 0.4rem 0.55rem;
+  max-width: calc(100% - 24px);
+  background: rgba(15, 23, 42, 0.9);
+  border-radius: var(--radius);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+}
+
+.map-floor-step-float-next {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.map-floor-step-float-caption {
+  font-size: 0.7rem;
+  line-height: 1.2;
+  color: #e2e8f0;
+  text-align: center;
+  max-width: 10rem;
 }
 
 .map-floor-step-float-btn {
   min-width: 5.5rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.map-route-next-floor-wrap {
+  margin-top: 0.65rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.map-route-next-floor-lead {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.map-route-next-floor-btn {
+  width: 100%;
+  margin-top: 0.45rem;
+  font-weight: 600;
 }
 
 .map-canvas-wrap--floor {
@@ -440,6 +505,10 @@ input, select, textarea {
   background: #f59e0b;
   border: 2px solid #111827;
   box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.3);
+}
+
+.dark .corridor-draft-handle {
+  border-color: #e2e8f0;
 }
 
 .campus-image-map {
@@ -540,6 +609,13 @@ input, select, textarea {
   min-width: 5.8rem;
 }
 
+.map-route-autostep-hint {
+  flex-basis: 100%;
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
 
 .map-search-label {
   display: block;
@@ -629,6 +705,44 @@ input, select, textarea {
 .error-msg { color: var(--color-danger); margin: 0 0 0.5rem; font-size: 0.9rem; }
 .btn-block { width: 100%; }
 .form-footer { margin-top: 1rem; font-size: 0.9rem; }
+
+.auth-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0 0;
+  padding: 0.25rem;
+  border-radius: 0.75rem;
+  background: var(--color-surface-muted, #f3f4f6);
+}
+.dark .auth-tabs {
+  background: #0f172a;
+  border: 1px solid var(--color-border);
+}
+.auth-tab {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-muted, #6b7280);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.auth-tab:hover {
+  color: var(--color-primary, #059669);
+}
+.auth-tab-active {
+  background: #fff;
+  color: var(--color-primary, #059669);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.dark .auth-tab-active {
+  background: var(--color-surface);
+  color: var(--color-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
 
 .dashboard-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
 .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }

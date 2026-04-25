@@ -39,6 +39,21 @@ export function buildFlatSegmentsFromCorridors(corridors) {
 /**
  * Furthest distance from any sample point on AB to the nearest saved corridor segment.
  */
+/**
+ * Shortest distance from P to any saved corridor segment (orthogonal projection).
+ * Uses the same flattened segments as routing QA (actual drawn orange polylines).
+ */
+export function minDistancePointToCorridorSegments(px, py, flatSegments) {
+  if (!flatSegments?.length || !Number.isFinite(px) || !Number.isFinite(py)) return Infinity;
+  let best = Infinity;
+  for (const s of flatSegments) {
+    const proj = closestPointOnSegment(px, py, s.ax, s.ay, s.bx, s.by);
+    const d = euclidean({ x: px, y: py }, proj);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
 export function maxDeviationAlongEdgeToSegments(ax, ay, bx, by, flatSegments, steps = 7) {
   if (!flatSegments?.length) return Infinity;
   const n = Math.max(2, steps);

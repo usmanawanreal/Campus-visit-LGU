@@ -10,8 +10,8 @@ export const login = async (email, password) => {
   return data;
 };
 
-export const register = async (name, email, password, role) => {
-  const { data } = await api.post('/auth/register', { name, email, password, role });
+export const register = async (name, email, password) => {
+  const { data } = await api.post('/auth/register', { name, email, password });
   if (data.token) localStorage.setItem(TOKEN_KEY, data.token);
   if (data.user) localStorage.setItem(USER_KEY, JSON.stringify(data.user));
   return data;

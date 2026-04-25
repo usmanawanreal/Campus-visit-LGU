@@ -4,6 +4,7 @@ import {
   areCorridorPolylineNeighbors,
   buildFlatSegmentsFromCorridors,
   maxDeviationAlongEdgeToSegments,
+  minDistancePointToCorridorSegments,
   pathIdsStayNearSavedCorridorSegments
 } from './corridorPathGeometry.js';
 
@@ -11,6 +12,21 @@ test('areCorridorPolylineNeighbors: same chain adjacent indices only', () => {
   assert.equal(areCorridorPolylineNeighbors('cor:abc:0', 'cor:abc:1'), true);
   assert.equal(areCorridorPolylineNeighbors('cor:abc:0', 'cor:abc:2'), false);
   assert.equal(areCorridorPolylineNeighbors('cor:abc:0', 'cor:def:1'), false);
+});
+
+test('minDistancePointToCorridorSegments: on polyline vs far away', () => {
+  const corridors = [
+    {
+      _id: 'lane',
+      corridorPoints: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 }
+      ]
+    }
+  ];
+  const flat = buildFlatSegmentsFromCorridors(corridors);
+  assert.ok(minDistancePointToCorridorSegments(50, 0, flat) < 0.01);
+  assert.ok(minDistancePointToCorridorSegments(50, 100, flat) > 90);
 });
 
 test('maxDeviationAlongEdgeToSegments: on-segment edge is tight', () => {

@@ -136,6 +136,28 @@ export function appendLegPoints(rawPoints, startLoc, endLoc, detailed, physicalS
   }
 }
 
+/**
+ * After two cross-floor legs are appended to `rawPoints`, force each point's `mapId` to the start or
+ * destination floor image so `rawPointsToSegments` always produces two segments when those map ids differ.
+ * (Corridor graph vertices sometimes omit or repeat mapId; a single merged segment would hide “Next floor”.)
+ */
+export function coerceCrossFloorLegMapIds(rawPoints, splitIndex, startMapKey, endMapKey) {
+  if (!Array.isArray(rawPoints) || rawPoints.length === 0) return;
+  const a = String(startMapKey || '').trim();
+  const b = String(endMapKey || '').trim();
+  if (!a || !b || a === b) return;
+  const s = Math.floor(Number(splitIndex));
+  if (!Number.isFinite(s) || s <= 0 || s > rawPoints.length) return;
+  for (let i = 0; i < s; i++) {
+    const p = rawPoints[i];
+    if (p && Number.isFinite(Number(p.x))) p.mapId = a;
+  }
+  for (let i = s; i < rawPoints.length; i++) {
+    const p = rawPoints[i];
+    if (p && Number.isFinite(Number(p.x))) p.mapId = b;
+  }
+}
+
 export function rawPointsToSegments(rawPoints) {
   const segments = [];
   for (const p of rawPoints) {

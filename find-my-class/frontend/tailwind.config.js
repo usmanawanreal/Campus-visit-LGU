@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
@@ -51,6 +52,8 @@ export default {
       backgroundImage: {
         'hero-gradient':
           'linear-gradient(135deg, rgba(236,253,245,0.97) 0%, rgba(255,255,255,0.92) 45%, rgba(209,250,229,0.55) 100%)',
+        'hero-gradient-dark':
+          'linear-gradient(135deg, rgba(15,23,42,0.98) 0%, rgba(30,41,59,0.95) 45%, rgba(16,185,129,0.14) 100%)',
         'cta-green':
           'linear-gradient(120deg, #059669 0%, #10b981 40%, #34d399 100%)'
       }

@@ -10,7 +10,8 @@
     "seed:map": "node scripts/seedNavigationData.js",
     "seed:navigation-locations": "node scripts/seedNavigationLocations.js",
     "cleanup:test-navigation-locations": "node scripts/cleanupTestNavigationLocations.js",
-    "test": "node --test services/corridorWalkGraph.test.js utils/footprintRouting.test.js utils/corridorPathGeometry.test.js utils/navigationRouteMerge.test.js utils/doorRouting.test.js utils/corridorConnectivity.test.js utils/crossFloorWaypointPenalty.test.js utils/groundConnectorMap.test.js"
+    "copy-db": "node scripts/copyDatabase.js",
+    "test": "node --test services/corridorWalkGraph.test.js utils/footprintRouting.test.js utils/corridorPathGeometry.test.js utils/navigationRouteMerge.test.js utils/doorRouting.test.js utils/corridorConnectivity.test.js utils/crossFloorWaypointPenalty.test.js utils/crossFloorRoutePairing.test.js utils/crossFloorConnectivityAudit.test.js utils/groundConnectorMap.test.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

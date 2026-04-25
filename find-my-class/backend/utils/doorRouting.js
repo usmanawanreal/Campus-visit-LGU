@@ -53,6 +53,7 @@ function detailedRoutingScore(detailed, startDoorUsed, endDoorUsed) {
  * @param {object[]} startDoors - doors with linksToLocation === fromLoc._id
  * @param {object[]} endDoors - doors with linksToLocation === toLoc._id
  * @param {(a: object, b: object) => Promise<object>} runDetailedForPair
+ * @param {{ earlyExitOnFirstSuccess?: boolean, omitDirectFromTo?: boolean }} [options] - When true, return as soon as any candidate yields a path (iteration order); skips comparing remaining doors/legs. Used for cross-floor inner legs to avoid combinatorial slowdown. `omitDirectFromTo`: skip the initial from→to attempt (caller already tried it).
  * @returns {Promise<{ detailed: object, physicalStart: object, physicalEnd: object, startDoorUsed: object|null, endDoorUsed: object|null }>}
  */
 export async function pickBestRouteWithOptionalDoors(
@@ -60,17 +61,20 @@ export async function pickBestRouteWithOptionalDoors(
   toLoc,
   startDoors,
   endDoors,
-  runDetailedForPair
+  runDetailedForPair,
+  options = {}
 ) {
   const sList = Array.isArray(startDoors) ? startDoors : [];
   const eList = Array.isArray(endDoors) ? endDoors : [];
+  const earlyExitOnFirstSuccess = Boolean(options.earlyExitOnFirstSuccess);
+  const omitDirectFromTo = Boolean(options.omitDirectFromTo);
 
   let best = null;
   let bestScore = Infinity;
 
   const consider = async (from, to, startDoorUsed, endDoorUsed) => {
     const detailed = await runDetailedForPair(from, to);
-    if (pathLen(detailed) < 2) return;
+    if (pathLen(detailed) < 2) return false;
     const score = detailedRoutingScore(detailed, startDoorUsed, endDoorUsed);
     if (score < bestScore) {
       bestScore = score;
@@ -82,17 +86,27 @@ export async function pickBestRouteWithOptionalDoors(
         endDoorUsed
       };
     }
+    return true;
   };
 
-  await consider(fromLoc, toLoc, null, null);
-
+  const steps = [];
+  if (!omitDirectFromTo) {
+    steps.push(() => consider(fromLoc, toLoc, null, null));
+  }
   for (const ed of eList) {
-    await consider(fromLoc, ed, null, ed);
+    steps.push(() => consider(fromLoc, ed, null, ed));
   }
   for (const sd of sList) {
-    await consider(sd, toLoc, sd, null);
+    steps.push(() => consider(sd, toLoc, sd, null));
     for (const ed of eList) {
-      await consider(sd, ed, sd, ed);
+      steps.push(() => consider(sd, ed, sd, ed));
+    }
+  }
+
+  for (const step of steps) {
+    const ok = await step();
+    if (earlyExitOnFirstSuccess && ok && best) {
+      return best;
     }
   }
 

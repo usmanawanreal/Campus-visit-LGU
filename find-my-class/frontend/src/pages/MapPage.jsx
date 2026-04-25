@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams, useLocation, useNavigate } from 'react-router-dom';
 import CampusImageMap from '../components/CampusImageMap.jsx';
 import {
   campusMaps,
@@ -15,6 +15,12 @@ import * as edgeService from '../services/edgeService.js';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const NODE_TYPES = ['hallway', 'entrance', 'stairs', 'elevator'];
+
+function navLocationId(loc) {
+  if (!loc) return '';
+  const raw = loc._id ?? loc.id;
+  return raw != null ? String(raw) : '';
+}
 
 /** Persist the building-floor index that matches the selected floor-plan image (avoids saving floor 0 while on Third floor). */
 function floorIndexForNavPayload(mapId, selectedFloor) {
@@ -211,23 +217,49 @@ function getFriendlyLoadError(error) {
 
 function getFriendlyRouteError(error) {
   const msg = error?.message || '';
-  if (/same map image|same map id|corridors across different floor plans/i.test(msg)) return msg;
-  if (/No walkable path/i.test(msg)) return msg;
-  if (/Routes between two different floor plans must start and end in the same building/i.test(msg)) {
+  if (
+    /same map image|same map id|corridors across different floor plans/i.test(msg) ||
+    /No walkable path|Saved corridors|walkable network|walkable cross-floor|corridor polylines|orange lines|pins are too far|too far from the orange/i.test(msg) ||
+    /Routes between two different floor plans must start and end in the same building/i.test(msg) ||
+    /Cross-floor routing needs/i.test(msg) ||
+    /No walkable cross-floor|transition candidate|CROSS_FLOOR_MAX_WAYPOINTS/i.test(msg)
+  ) {
     return msg;
   }
-  if (/Cross-floor routing needs/i.test(msg)) return msg;
-  if (/No walkable cross-floor path/i.test(msg)) return msg;
   if (/not found/i.test(msg)) return 'Selected location is no longer available. Please reselect.';
+  if (error?.code === 'ECONNABORTED' || /timeout of \d+ms exceeded/i.test(msg)) {
+    return 'The route request took too long and was cancelled (3 minute limit). Cross-floor “Draw route” runs full pathfinding on each floor—not the same as the lighter connectivity scan. Very large corridor graphs can exceed the limit; try again or check the Network tab for /api/navigation/route staying pending. Admins can set CROSS_FLOOR_WAYPOINTS_ALL=true (slower, more candidate pins), or raise CROSS_FLOOR_MAX_WAYPOINTS_PER_SIDE / CROSS_FLOOR_MAX_DEST_DOORS if a path was skipped.';
+  }
   if (/network|failed to fetch|timeout/i.test(msg)) {
     return 'Route service is currently unavailable. Please try again.';
   }
   return 'Unable to calculate route right now. Please try again.';
 }
 
+function formatCrossFloorDisconnectReason(reason) {
+  switch (reason) {
+    case 'no_peer_floor_with_stairs_on_corridor':
+      return 'This floor reaches stairs, but no other floor image in this building has stairs/elevator on the corridor graph — fix another floor or add a building filter if maps are mixed.';
+    case 'no_path_to_stairs':
+      return 'No corridor walk to any stair or elevator landmark on this floor.';
+    case 'no_corridor_on_map':
+      return 'No corridor polylines on this floor image.';
+    case 'no_stairs_or_elevator_marker':
+      return 'Add a point named like “Stairs” or “Elevator” on this floor.';
+    case 'stairs_not_on_corridor_graph':
+      return 'Stair/elevator pins exist but do not snap to orange corridors — move pins or extend lines.';
+    case 'missing_coordinates':
+      return 'Missing x/y (or fix linked routing node).';
+    default:
+      return reason || 'Unknown';
+  }
+}
+
 export default function MapPage() {
   const { isAuthenticated } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [selectedMapId, setSelectedMapId] = useState(campusMaps[0].id);
   const [allLocations, setAllLocations] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -261,6 +293,9 @@ export default function MapPage() {
   const [routeSegments, setRouteSegments] = useState([]);
   const [activeRouteSegmentIndex, setActiveRouteSegmentIndex] = useState(0);
   const [isRouteAutoStepEnabled, setIsRouteAutoStepEnabled] = useState(true);
+  /** After user goes to an earlier route segment, skip timed auto-advance until the next Draw route. */
+  const routeAutoStepSuppressRef = useRef(false);
+  const routeSegmentIndexPrevRef = useRef(0);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState('');
   const [routeMeta, setRouteMeta] = useState(null);
@@ -269,6 +304,15 @@ export default function MapPage() {
   const [corridorReachability, setCorridorReachability] = useState(null);
   const [corridorHealthError, setCorridorHealthError] = useState('');
   const [corridorHealthLoading, setCorridorHealthLoading] = useState(false);
+  /** Pins not linked to any corridor island (after QA check); shown red on map. */
+  const [corridorOrphanIds, setCorridorOrphanIds] = useState([]);
+  /** Full API response from stair reachability audit (all floor plans). */
+  const [stairsAudit, setStairsAudit] = useState(null);
+  const [stairsAuditLoading, setStairsAuditLoading] = useState(false);
+  const [stairsAuditError, setStairsAuditError] = useState('');
+  const [crossFloorAudit, setCrossFloorAudit] = useState(null);
+  const [crossFloorAuditLoading, setCrossFloorAuditLoading] = useState(false);
+  const [crossFloorAuditError, setCrossFloorAuditError] = useState('');
   const [filterBuildingId, setFilterBuildingId] = useState('');
   const [filterFloor, setFilterFloor] = useState('');
   const [navigationNodes, setNavigationNodes] = useState([]);
@@ -356,6 +400,13 @@ export default function MapPage() {
     const f = Number(filterFloor);
     return mapPointLocations.filter((loc) => Number(loc.floor) === f);
   }, [mapPointLocations, filterFloor, isDedicatedFloorPlan]);
+  /** Same scope as mapMarkers but ignores sidebar search — corridor orphan pins must still match QA ids and turn red. */
+  const mapPointLocationsNoSearch = useMemo(() => {
+    let list = locations.filter((location) => (location.kind || 'point') !== 'corridor');
+    if (filterFloor === '' || isDedicatedFloorPlan) return list;
+    const f = Number(filterFloor);
+    return list.filter((loc) => Number(loc.floor) === f);
+  }, [locations, filterFloor, isDedicatedFloorPlan]);
   const mapVisibleCorridors = useMemo(() => {
     if (filterFloor === '' || isDedicatedFloorPlan) return mapCorridors;
     const f = Number(filterFloor);
@@ -374,12 +425,75 @@ export default function MapPage() {
     return filterByFloor(navigationNodes.filter((node) => idSet.has(String(node._id))));
   }, [navigationNodes, filterFloor, showNavigationNodes, focusedNavigationNodeIds, isDedicatedFloorPlan]);
 
-  /** Without overlays: bare PNG; search focus can still show one pin. Route polyline is separate. */
+  const orphanIdSet = useMemo(() => new Set(corridorOrphanIds.map(String)), [corridorOrphanIds]);
+
+  const allStairGapIds = useMemo(() => {
+    if (!stairsAudit?.maps) return new Set();
+    const s = new Set();
+    for (const m of stairsAudit.maps) {
+      for (const row of m.missing || []) s.add(String(row.id));
+    }
+    return s;
+  }, [stairsAudit]);
+
+  const stairGapIdsOnSelectedMap = useMemo(() => {
+    if (!stairsAudit?.maps || !selectedMap?.id) return [];
+    const row = stairsAudit.maps.find((m) => m.mapId === selectedMap.id);
+    return (row?.missing || []).map((x) => String(x.id));
+  }, [stairsAudit, selectedMap.id]);
+
+  const crossFloorGapIdsOnSelectedMap = useMemo(() => {
+    if (!crossFloorAudit?.maps || !selectedMap?.id) return [];
+    const row = crossFloorAudit.maps.find((m) => m.mapId === selectedMap.id);
+    return (row?.disconnected || []).map((x) => String(x.id));
+  }, [crossFloorAudit, selectedMap.id]);
+
+  const stairGapIdSetForMerge = useMemo(
+    () => new Set(stairGapIdsOnSelectedMap.map(String)),
+    [stairGapIdsOnSelectedMap]
+  );
+
+  const crossFloorGapIdSetForMerge = useMemo(
+    () => new Set(crossFloorGapIdsOnSelectedMap.map(String)),
+    [crossFloorGapIdsOnSelectedMap]
+  );
+
+  /** Without overlays: bare PNG; search focus can still show one pin. Route polyline is separate.
+   * Corridor QA orphans are always merged in so red pins stay visible even when overlays are off. */
   const locationsOnMap = useMemo(() => {
-    if (showMapBaseOverlays) return mapMarkers;
-    if (focusedLocationId) return mapMarkers.filter((l) => l._id === focusedLocationId);
-    return [];
-  }, [showMapBaseOverlays, mapMarkers, focusedLocationId]);
+    let base;
+    if (showMapBaseOverlays) base = mapMarkers;
+    else if (focusedLocationId)
+      base = mapMarkers.filter((l) => navLocationId(l) === String(focusedLocationId));
+    else base = [];
+
+    if (
+      orphanIdSet.size === 0 &&
+      stairGapIdSetForMerge.size === 0 &&
+      crossFloorGapIdSetForMerge.size === 0
+    )
+      return base;
+    const orphans = mapPointLocationsNoSearch.filter((l) => orphanIdSet.has(navLocationId(l)));
+    const stairGaps = mapPointLocationsNoSearch.filter((l) =>
+      stairGapIdSetForMerge.has(navLocationId(l))
+    );
+    const crossFloorGaps = mapPointLocationsNoSearch.filter((l) =>
+      crossFloorGapIdSetForMerge.has(navLocationId(l))
+    );
+    const merged = new Map();
+    for (const loc of [...base, ...orphans, ...stairGaps, ...crossFloorGaps]) {
+      merged.set(navLocationId(loc), loc);
+    }
+    return Array.from(merged.values());
+  }, [
+    showMapBaseOverlays,
+    mapMarkers,
+    mapPointLocationsNoSearch,
+    focusedLocationId,
+    orphanIdSet,
+    stairGapIdSetForMerge,
+    crossFloorGapIdSetForMerge
+  ]);
 
   const corridorsOnMap = showMapBaseOverlays ? mapVisibleCorridors : [];
   const navigationNodesOnMap = useMemo(() => {
@@ -427,6 +541,12 @@ export default function MapPage() {
     campusMaps.forEach((c) => m.set(String(c.id), c.label));
     return m;
   }, []);
+  const nextRouteSegmentLabel = useMemo(() => {
+    if (!routeMeta?.crossMap || routeSegments.length < 2) return '';
+    const next = routeSegments[activeRouteSegmentIndex + 1];
+    if (!next?.mapId) return 'next floor';
+    return mapIdToLabel.get(String(next.mapId)) || String(next.mapId);
+  }, [routeMeta, routeSegments, activeRouteSegmentIndex, mapIdToLabel]);
   /** Places users can pick for routes (rooms/places only — not corridors or doors). */
   const selectableLocations = useMemo(() => {
     const list = allLocations.filter((l) => {
@@ -589,6 +709,7 @@ export default function MapPage() {
 
   const handleNavigationMapChange = useCallback((mapId) => {
     setSelectedMapId(mapId);
+    setCorridorOrphanIds([]);
     const floorVal = mapIdToFloorFilterValue(mapId);
     if (floorVal !== null) {
       setFilterFloor(floorVal);
@@ -597,6 +718,31 @@ export default function MapPage() {
       setFilterFloor('');
     }
   }, []);
+
+  /** Open map from Admin corridor QA with optional map switch + red pins. */
+  useEffect(() => {
+    const st = location.state;
+    if (!st || typeof st !== 'object') return;
+    const incomingMap = st.selectMapId;
+    const incomingOrphans = st.corridorOrphanIds;
+    if (!incomingMap && !Array.isArray(incomingOrphans)) return;
+
+    if (incomingMap && campusMaps.some((m) => m.id === incomingMap)) {
+      setSelectedMapId(incomingMap);
+      const floorVal = mapIdToFloorFilterValue(incomingMap);
+      if (floorVal !== null) {
+        setFilterFloor(floorVal);
+        setSelectedFloor(Number(floorVal));
+      } else {
+        setFilterFloor('');
+      }
+    }
+    if (Array.isArray(incomingOrphans) && incomingOrphans.length > 0) {
+      setCorridorOrphanIds(incomingOrphans.map(String));
+      setShowMapBaseOverlays(true);
+    }
+    navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: {} });
+  }, [location.state, location.pathname, location.search, navigate]);
 
   const goToRouteSegment = useCallback((nextIndex) => {
     setActiveRouteSegmentIndex((prev) => {
@@ -615,6 +761,14 @@ export default function MapPage() {
       return idx;
     });
   }, [routeSegments]);
+
+  useEffect(() => {
+    const prev = routeSegmentIndexPrevRef.current;
+    if (activeRouteSegmentIndex < prev) {
+      routeAutoStepSuppressRef.current = true;
+    }
+    routeSegmentIndexPrevRef.current = activeRouteSegmentIndex;
+  }, [activeRouteSegmentIndex]);
 
   const handleRenameNavigationLocationFromPopup = useCallback(
     async (locationId, newName) => {
@@ -666,6 +820,7 @@ export default function MapPage() {
 
   useEffect(() => {
     if (!isRouteAutoStepEnabled) return;
+    if (routeAutoStepSuppressRef.current) return;
     if (!activeRouteSegment) return;
     if (routeLoading) return;
     if (activeRouteSegmentIndex >= routeSegments.length - 1) return;
@@ -1234,9 +1389,9 @@ export default function MapPage() {
     }
     const timer = setTimeout(() => {
       setRouteSlowHint(
-        'Route is taking longer than usual. If it never finishes, corridors or routing nodes may be missing between these two places.'
+        'Still computing… If start and end are on different floor images, the server pairs stair/elevator waypoints — large buildings can take a few seconds. If it never finishes, run “Check corridor connection” on each floor or ensure orange corridors reach your stair landings.'
       );
-    }, 6000);
+    }, 4500);
     return () => clearTimeout(timer);
   }, [routeLoading]);
 
@@ -1331,6 +1486,7 @@ export default function MapPage() {
   const handleCheckCorridorHealth = useCallback(async () => {
     setCorridorHealth(null);
     setCorridorReachability(null);
+    setCorridorOrphanIds([]);
     setCorridorHealthError('');
     setCorridorHealthLoading(true);
     try {
@@ -1340,12 +1496,51 @@ export default function MapPage() {
       ]);
       setCorridorHealth(healthRes.data);
       setCorridorReachability(reachRes.data);
+      const unreachable = Array.isArray(reachRes.data?.unreachable) ? reachRes.data.unreachable : [];
+      setCorridorOrphanIds(unreachable.map((row) => String(row.id)));
+      if (unreachable.length > 0) {
+        setShowMapBaseOverlays(true);
+      }
     } catch (err) {
       setCorridorHealthError(err?.message || 'Could not check corridors.');
     } finally {
       setCorridorHealthLoading(false);
     }
   }, [selectedMap.id]);
+
+  const handleStairsAudit = useCallback(async () => {
+    setStairsAuditError('');
+    setStairsAuditLoading(true);
+    try {
+      const { data } = await navigationService.getStairsReachabilityAudit(filterBuildingId || undefined);
+      setStairsAudit(data);
+      const miss = Number(data?.totals?.locationsMissingStairConnection) || 0;
+      if (miss > 0) setShowMapBaseOverlays(true);
+    } catch (err) {
+      setStairsAuditError(err?.message || 'Could not run stair audit.');
+      setStairsAudit(null);
+    } finally {
+      setStairsAuditLoading(false);
+    }
+  }, [filterBuildingId]);
+
+  const handleCrossFloorConnectivityAudit = useCallback(async () => {
+    setCrossFloorAuditError('');
+    setCrossFloorAuditLoading(true);
+    try {
+      const { data } = await navigationService.getCrossFloorConnectivityAudit(
+        filterBuildingId || undefined
+      );
+      setCrossFloorAudit(data);
+      const miss = Number(data?.totals?.pinsDisconnectedForCrossFloor) || 0;
+      if (miss > 0) setShowMapBaseOverlays(true);
+    } catch (err) {
+      setCrossFloorAuditError(err?.message || 'Could not run cross-floor connectivity check.');
+      setCrossFloorAudit(null);
+    } finally {
+      setCrossFloorAuditLoading(false);
+    }
+  }, [filterBuildingId]);
 
   const handleDrawRoute = async () => {
     if (allLocations.length === 0) {
@@ -1361,11 +1556,25 @@ export default function MapPage() {
       return;
     }
 
+    if (
+      stairsAudit &&
+      allStairGapIds.size > 0 &&
+      (allStairGapIds.has(String(startLocationId)) ||
+        allStairGapIds.has(String(destinationLocationId)))
+    ) {
+      setRouteError(
+        'Stair audit: start or destination still cannot reach stairs/elevator on its floor (shown as green pins). Fix corridors or add stair markers, run “Check stair access” again, then draw the route.'
+      );
+      return;
+    }
+
     setRouteLoading(true);
     setRouteError('');
     setRouteSegments([]);
     setRouteMeta(null);
     setRouteSlowHint('');
+    routeAutoStepSuppressRef.current = false;
+    routeSegmentIndexPrevRef.current = 0;
     setActiveRouteSegmentIndex(0);
     try {
       const route = await navigationService.getRouteWithSegments(
@@ -1382,6 +1591,8 @@ export default function MapPage() {
         );
         return;
       }
+      routeAutoStepSuppressRef.current = false;
+      routeSegmentIndexPrevRef.current = 0;
       setRouteSegments(route.segments);
       setRouteMeta(route.meta || null);
       setActiveRouteSegmentIndex(0);
@@ -1451,8 +1662,18 @@ export default function MapPage() {
           >
             {corridorHealthLoading ? 'Checking…' : 'Check corridor connection (this map)'}
           </button>
+          {corridorOrphanIds.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setCorridorOrphanIds([])}
+            >
+              Clear red pin highlights
+            </button>
+          )}
           <p className="muted map-corridor-health-hint">
             Uses the map selected above (<strong>{selectedMap.label}</strong>). Verifies orange corridor lines form <strong>one</strong> connected network (same rules as routing).
+            After the check, pins that cannot snap to any orange corridor island appear <strong style={{ color: '#ef4444' }}>red</strong> on the map (turn on “Show place pins” if needed).
           </p>
           {corridorHealthError && <p className="error map-admin-msg">{corridorHealthError}</p>}
           {corridorHealth && (
@@ -1490,8 +1711,14 @@ export default function MapPage() {
                   {corridorReachability.unreachableCount > 0 ? (
                     <>
                       <p className="map-corridor-health-bad">
-                        Not linked to any corridor island (routing cannot snap from these pins):{' '}
-                        {corridorReachability.unreachableCount}
+                        Pins to fix: {corridorReachability.unreachableCount}.
+                        {corridorReachability.corridorQaMaxDistance != null ? (
+                          <>
+                            {' '}
+                            Red = no walkable link to an orange island, or farther than{' '}
+                            <strong>{corridorReachability.corridorQaMaxDistance}</strong> map units from every orange segment.
+                          </>
+                        ) : null}
                       </p>
                       <ul className="map-corridor-unreachable-list">
                         {corridorReachability.unreachable.map((row) => (
@@ -1499,18 +1726,170 @@ export default function MapPage() {
                             <strong>{row.name || row.id}</strong>
                             {row.kind ? ` (${row.kind})` : ''}
                             {row.reason === 'missing_coordinates' ? ' — missing x/y' : ''}
+                            {row.reason === 'far_from_drawn_corridor'
+                              ? ` — too far from orange lines${row.minDistanceToCorridor != null ? ` (~${row.minDistanceToCorridor})` : ''}`
+                              : ''}
+                            {row.reason === 'no_corridor_path' ? ' — no graph path to corridor' : ''}
                           </li>
                         ))}
                       </ul>
                     </>
                   ) : (
-                    <p className="map-corridor-health-ok">Every checked pin can reach a saved corridor line.</p>
+                    <p className="map-corridor-health-ok">
+                      Every checked pin reaches the corridor graph and sits close enough to drawn orange segments.
+                    </p>
                   )}
                 </div>
               )}
               {corridorReachability?.skipped && (
                 <p className="muted">Pin reachability was skipped: add corridor polylines (2+ points each) first.</p>
               )}
+            </div>
+          )}
+        </div>
+
+        <div className="map-corridor-health-tools map-stairs-audit-tools">
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={handleStairsAudit}
+            disabled={stairsAuditLoading || crossFloorAuditLoading}
+          >
+            {stairsAuditLoading ? 'Checking stairs…' : 'Check stair access (all floors)'}
+          </button>
+          {stairGapIdsOnSelectedMap.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setStairsAudit(null)}
+            >
+              Clear green stair-audit pins
+            </button>
+          )}
+          <p className="muted map-corridor-health-hint">
+            Before routing to <strong>another floor or building</strong>, every room should connect along orange corridors
+            to a landmark named like <strong>stairs</strong> or <strong>elevator</strong>. This scans{' '}
+            <strong>all floor images</strong>
+            {filterBuildingId ? ' for the building selected in the filter below' : ''}. Pins that cannot reach any such
+            landmark are marked <strong style={{ color: '#22c55e' }}>green</strong> on the current map. Run this first,
+            fix issues, then use <strong>Draw route</strong>.
+          </p>
+          {stairsAuditError && <p className="error map-admin-msg">{stairsAuditError}</p>}
+          {stairsAudit && (
+            <div className="map-corridor-health-result muted" role="status">
+              <p
+                className={
+                  (stairsAudit.totals?.locationsMissingStairConnection || 0) === 0
+                    ? 'map-corridor-health-ok'
+                    : 'map-corridor-health-bad'
+                }
+              >
+                Floors scanned: {stairsAudit.mapsAudited ?? stairsAudit.maps?.length ?? 0}. Pins checked:{' '}
+                {stairsAudit.totals?.locationsChecked ?? 0}. Missing stair/elevator connection:{' '}
+                <strong>{stairsAudit.totals?.locationsMissingStairConnection ?? 0}</strong>.
+              </p>
+              {Array.isArray(stairsAudit.maps) &&
+                stairsAudit.maps.some((m) => (m.missing || []).length > 0) && (
+                  <ul className="map-corridor-health-next">
+                    {stairsAudit.maps.map((m) =>
+                      (m.missing || []).length === 0 ? null : (
+                        <li key={m.mapId}>
+                          <strong>{campusMaps.find((c) => c.id === m.mapId)?.label || m.mapId}</strong> —{' '}
+                          {(m.missing || []).length} location(s): stairs on map {m.stairsWaypointCount}, walkable stair
+                          snaps {m.stairTargetsOnGraph ?? 0}. Sample:{' '}
+                          {(m.missing || [])
+                            .slice(0, 4)
+                            .map((x) => x.name || x.id)
+                            .join(', ')}
+                          {(m.missing || []).length > 4 ? '…' : ''}
+                        </li>
+                      )
+                    )}
+                  </ul>
+                )}
+            </div>
+          )}
+        </div>
+
+        <div className="map-corridor-health-tools map-cross-floor-audit-tools">
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={handleCrossFloorConnectivityAudit}
+            disabled={crossFloorAuditLoading || stairsAuditLoading}
+          >
+            {crossFloorAuditLoading ? 'Checking cross-floor…' : 'Check cross-floor connectivity'}
+          </button>
+          {crossFloorGapIdsOnSelectedMap.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setCrossFloorAudit(null)}
+            >
+              Clear pink cross-floor pins
+            </button>
+          )}
+          <p className="muted map-corridor-health-hint">
+            <strong>All floor images</strong> in scope are scanned (same count as “Floor images scanned”). On{' '}
+            <em>each</em> map, every room/door pin is checked only <strong>on that floor</strong>: can it walk orange
+            corridors to a stair/elevator landmark? Then, if the building has more than one floor image, we require that{' '}
+            <strong>at least one other</strong> floor—not every pair—has stairs/elevator snapped to <em>its</em>{' '}
+            corridor graph. We do <strong>not</strong> simulate every chain (e.g. floor 2 → floor 1 → floor 3); actual
+            routes between two specific rooms are still decided when you use <strong>Draw route</strong>. Use the
+            building filter when several buildings share one file. Failing pins on the map you have open are{' '}
+            <strong style={{ color: '#db2777' }}>pink</strong>; the list below is for <strong>this</strong> floor image
+            only.
+          </p>
+          <p className="muted map-corridor-health-hint" style={{ marginTop: '0.35rem' }}>
+            <strong>Draw route</strong> is separate and much heavier: it runs full shortest-path search on each floor’s
+            corridor graph and evaluates stair pairings for your <em>exact</em> start and destination. Passing this scan
+            (0 pink pins) means corridors and stair markers look sane per floor; it does <strong>not</strong> guarantee
+            the route request will finish quickly—very dense orange lines can still make the server work past the
+            browser’s time limit.
+          </p>
+          {crossFloorAuditError && <p className="error map-admin-msg">{crossFloorAuditError}</p>}
+          {crossFloorAudit && (
+            <div className="map-corridor-health-result muted" role="status">
+              <p
+                className={
+                  (crossFloorAudit.totals?.pinsDisconnectedForCrossFloor || 0) === 0
+                    ? 'map-corridor-health-ok'
+                    : 'map-corridor-health-bad'
+                }
+              >
+                Floor images scanned: {crossFloorAudit.mapsAudited ?? crossFloorAudit.maps?.length ?? 0}. Pins not
+                cross-floor–ready (all maps):{' '}
+                <strong>{crossFloorAudit.totals?.pinsDisconnectedForCrossFloor ?? 0}</strong>.
+              </p>
+              {(() => {
+                const row = crossFloorAudit.maps?.find((m) => m.mapId === selectedMap.id);
+                const disc = Array.isArray(row?.disconnected) ? row.disconnected : [];
+                if (disc.length === 0) {
+                  return (
+                    <p className="map-corridor-health-ok" style={{ marginTop: '0.5rem' }}>
+                      On <strong>{selectedMap.label}</strong>, no failing room/door pins for this check
+                      {(crossFloorAudit.mapsAudited ?? crossFloorAudit.maps?.length ?? 0) > 1
+                        ? ' (other floors may still have issues).'
+                        : '.'}
+                    </p>
+                  );
+                }
+                return (
+                  <>
+                    <p className="map-corridor-health-bad" style={{ marginTop: '0.5rem' }}>
+                      <strong>{selectedMap.label}</strong> — {disc.length} location(s) (pink on map):
+                    </p>
+                    <ul className="map-corridor-unreachable-list">
+                      {disc.map((item) => (
+                        <li key={item.id}>
+                          <strong>{item.name || item.id}</strong>
+                          {item.kind ? ` (${item.kind})` : ''} — {formatCrossFloorDisconnectReason(item.reason)}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -1642,6 +2021,24 @@ export default function MapPage() {
               ))}
             </ol>
           )}
+        {routeMeta?.crossMap &&
+          routeSegments.length > 1 &&
+          activeRouteSegmentIndex < routeSegments.length - 1 && (
+            <div className="map-route-next-floor-wrap">
+              <p className="muted map-route-next-floor-lead">
+                When you reach the stairs, open the next floor image to see the rest of the blue route.
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary map-route-next-floor-btn"
+                onClick={() => goToRouteSegment(activeRouteSegmentIndex + 1)}
+              >
+                {nextRouteSegmentLabel
+                  ? `Open “${nextRouteSegmentLabel}” & show route`
+                  : 'Open next floor & show route'}
+              </button>
+            </div>
+          )}
         {routeSegments.length > 1 && (
           <div className="map-route-steps">
             <button
@@ -1650,7 +2047,7 @@ export default function MapPage() {
               onClick={() => goToRouteSegment(activeRouteSegmentIndex - 1)}
               disabled={activeRouteSegmentIndex <= 0}
             >
-              {routeMeta?.crossMap ? 'Prev Pic' : 'Prev Segment'}
+              {routeMeta?.crossMap ? 'Prev floor' : 'Prev Segment'}
             </button>
             <span className="muted">
               {routeMeta?.crossMap ? 'Floor' : 'Segment'} {activeRouteSegmentIndex + 1}/{routeSegments.length}
@@ -1661,7 +2058,7 @@ export default function MapPage() {
               onClick={() => goToRouteSegment(activeRouteSegmentIndex + 1)}
               disabled={activeRouteSegmentIndex >= routeSegments.length - 1}
             >
-              {routeMeta?.crossMap ? 'Next Pic' : 'Next Segment'}
+              {routeMeta?.crossMap ? 'Next floor' : 'Next Segment'}
             </button>
             <label className="map-checkbox-label">
               <input
@@ -1671,6 +2068,12 @@ export default function MapPage() {
               />
               <span>Auto-step</span>
             </label>
+            {routeMeta?.crossMap && routeSegments.length > 1 && (
+              <p className="muted map-route-autostep-hint">
+                Using <strong>Prev floor</strong> stops timed auto-advance for this route so the map stays on the floor
+                you picked. Draw the route again if you want the initial auto-advance after the first segment.
+              </p>
+            )}
           </div>
         )}
         {routeError && <p className="error map-route-error">{routeError}</p>}
@@ -2152,17 +2555,22 @@ export default function MapPage() {
                   className="btn btn-sm map-floor-step-float-btn"
                   onClick={() => goToRouteSegment(activeRouteSegmentIndex - 1)}
                 >
-                  {routeMeta?.crossMap ? 'Prev Pic' : 'Prev'}
+                  {routeMeta?.crossMap ? 'Prev floor' : 'Prev'}
                 </button>
               )}
               {activeRouteSegmentIndex < routeSegments.length - 1 && (
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm map-floor-step-float-btn"
-                  onClick={() => goToRouteSegment(activeRouteSegmentIndex + 1)}
-                >
-                  Next Pic
-                </button>
+                <div className="map-floor-step-float-next">
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm map-floor-step-float-btn"
+                    onClick={() => goToRouteSegment(activeRouteSegmentIndex + 1)}
+                  >
+                    {routeMeta?.crossMap ? 'Next floor' : 'Next'}
+                  </button>
+                  {routeMeta?.crossMap && nextRouteSegmentLabel ? (
+                    <span className="map-floor-step-float-caption">{nextRouteSegmentLabel}</span>
+                  ) : null}
+                </div>
               )}
             </div>
           )}
@@ -2197,6 +2605,9 @@ export default function MapPage() {
             routePath={activeRoutePath}
             isAdminRenameEnabled={isAuthenticated}
             onRenameNavigationLocation={handleRenameNavigationLocationFromPopup}
+            orphanLocationIds={corridorOrphanIds}
+            stairGapLocationIds={stairGapIdsOnSelectedMap}
+            crossFloorGapLocationIds={crossFloorGapIdsOnSelectedMap}
           />
         </div>
       </div>

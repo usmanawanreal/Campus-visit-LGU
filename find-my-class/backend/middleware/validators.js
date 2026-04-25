@@ -24,8 +24,7 @@ export const validateRouteCreate = validateBody([
 export const validateAuthRegister = validateBody([
   { key: 'name', required: true, type: 'string' },
   { key: 'email', required: true, type: 'email' },
-  { key: 'password', required: true, type: 'string' },
-  { key: 'role', required: true, type: 'string' }
+  { key: 'password', required: true, type: 'string' }
 ]);
 
 export const validateAuthLogin = validateBody([
@@ -68,6 +67,16 @@ export const validateNavigationRouteQuery = validateQuery([
 
 export const validateCorridorHealthQuery = validateQuery([
   { key: 'mapId', required: true, type: 'string' }
+]);
+
+/** Optional building filter when auditing stair reachability across all floor plans. */
+export const validateStairsReachabilityQuery = validateQuery([
+  { key: 'buildingId', mongoId: true }
+]);
+
+/** Optional building filter — same as stairs audit — for cross-floor connectivity across floor images. */
+export const validateCrossFloorConnectivityQuery = validateQuery([
+  { key: 'buildingId', mongoId: true }
 ]);
 
 export const validateNavigationLocationQuery = validateQuery([
