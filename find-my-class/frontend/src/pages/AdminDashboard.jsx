@@ -366,7 +366,7 @@ export default function AdminDashboard() {
               <ul className="admin-classroom-list">
                 {classrooms.map((c) => (
                   <li key={c._id} className="admin-classroom-item">
-                    <span><strong>{c.roomNumber}</strong>{c.buildingId && <span className="muted"> — {c.buildingId.name}, floor {c.floor}</span>}</span>
+                    <span><strong>{c.roomNumber}</strong>{c.buildingId && <span className="muted"> — {c.buildingId.name}</span>}</span>
                     <button type="button" className="btn btn-danger btn-sm" onClick={() => handleDelete('classroom', c._id)} disabled={deletingId === c._id}>{deletingId === c._id ? 'Deleting…' : 'Delete'}</button>
                   </li>
                 ))}
@@ -398,7 +398,7 @@ export default function AdminDashboard() {
               <ul className="admin-classroom-list">
                 {nodes.map((n) => (
                   <li key={n._id} className="admin-classroom-item admin-classroom-item--stack">
-                    <span><strong>{n.name}</strong> <span className="muted">— {n.buildingId?.name ?? n.buildingId}, map {n.mapId ?? '—'}, floor {n.floor}, ({n.x},{n.y}), {n.type}</span></span>
+                    <span><strong>{n.name}</strong> <span className="muted">— {n.buildingId?.name ?? n.buildingId}, map {n.mapId ?? '—'}, ({n.x},{n.y}), {n.type}</span></span>
                     <span className="admin-nav-location-actions">
                       <Link className="btn btn-ghost btn-sm" to={`/map?editNode=${n._id}`}>
                         Edit on map
@@ -495,7 +495,7 @@ export default function AdminDashboard() {
               <ul className="admin-classroom-list">
                 {filteredLocations.map((l) => (
                   <li key={l._id} className="admin-classroom-item">
-                    <span><strong>{l.name}</strong> <span className="muted">— {l.buildingId?.name ?? l.buildingId}, floor {l.floor}, {l.type}, node: {l.nodeId?.name ?? l.nodeId}</span></span>
+                    <span><strong>{l.name}</strong> <span className="muted">— {l.buildingId?.name ?? l.buildingId}, {l.type}, node: {l.nodeId?.name ?? l.nodeId}</span></span>
                     <button type="button" className="btn btn-danger btn-sm" onClick={() => handleDelete('location', l._id)} disabled={deletingId === l._id}>{deletingId === l._id ? 'Deleting…' : 'Delete'}</button>
                   </li>
                 ))}
@@ -570,7 +570,7 @@ export default function AdminDashboard() {
                         <span>
                           <strong>{l.name}</strong>{' '}
                           <span className="muted">
-                            — {l.kind || 'point'}, {l.mapId}, floor {l.floor}, ({l.x},{l.y})
+                            — {l.kind || 'point'}, {l.mapId}, ({l.x},{l.y})
                             {(l.kind === 'corridor' && Array.isArray(l.corridorPoints))
                               ? `, points: ${l.corridorPoints.length}`
                               : ''}

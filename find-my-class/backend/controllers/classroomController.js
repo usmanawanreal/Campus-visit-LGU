@@ -17,10 +17,32 @@ export const list = async (req, res) => {
   res.json(classrooms);
 };
 
+import NavigationLocation from '../models/NavigationLocation.js';
+
 export const getByRoomNumber = async (req, res) => {
-  const classroom = await Classroom.findOne({ roomNumber: req.params.roomNumber })
+  const searchTerm = req.params.roomNumber;
+  const re = new RegExp(`^${searchTerm}$`, 'i');
+  let classroom = await Classroom.findOne({ roomNumber: re })
     .populate('buildingId', 'name description floors')
     .lean();
+
+  if (!classroom) {
+    const navLoc = await NavigationLocation.findOne({
+      name: new RegExp(searchTerm, 'i'),
+      kind: 'point'
+    }).populate('building', 'name description floors').lean();
+
+    if (navLoc) {
+      classroom = {
+        _id: navLoc._id,
+        roomNumber: navLoc.name,
+        buildingId: navLoc.building,
+        floor: navLoc.floor,
+        coordinates: { x: navLoc.x, y: navLoc.y }
+      };
+    }
+  }
+
   if (!classroom) throw createError('Classroom not found', 404);
   res.json(classroom);
 };

@@ -26,6 +26,15 @@ export function normalizeFootprintPoints(points) {
 /**
  * Vertices + edge midpoints of a closed polygon (last edge closes to first).
  */
+/**
+ * Max boundary candidates per footprint.  Complex polygons (e.g. Masjid with
+ * 53 vertices = 212 raw candidates) cause combinatorial explosion inside
+ * bestPathOverFootprintPairs.  Cap to a reasonable number — the vertices
+ * nearest the centroid are kept because they are most likely to be near
+ * corridor snap points.
+ */
+const MAX_BOUNDARY_CANDIDATES = 32;
+
 export function footprintBoundaryCandidates(footprint, fallbackXY) {
   const fb = {
     x: Number(fallbackXY?.x),
@@ -49,7 +58,11 @@ export function footprintBoundaryCandidates(footprint, fallbackXY) {
       c.push({ x: p.x + t * dx, y: p.y + t * dy });
     }
   }
-  return c;
+  if (c.length <= MAX_BOUNDARY_CANDIDATES) return c;
+  /* Keep the candidates closest to the fallback (room center) — they are
+     most likely to be near corridor snap points on this floor plan. */
+  c.sort((a, b) => euclidean(a, fb) - euclidean(b, fb));
+  return c.slice(0, MAX_BOUNDARY_CANDIDATES);
 }
 
 export function graphPathLength(adjacencyMap, pathIds) {

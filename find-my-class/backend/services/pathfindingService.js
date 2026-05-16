@@ -223,7 +223,7 @@ async function tryCorridorPathfinding(startPoint, endPoint, options = {}) {
     startCands,
     endCands,
     {
-      segmentSnapK: Number(options.corridorSegmentSnapK) || 24,
+      segmentSnapK: Number(options.corridorSegmentSnapK) || 8,
       corridorGeometrySegments: flatSegs,
       corridorPathMaxDeviation
     }

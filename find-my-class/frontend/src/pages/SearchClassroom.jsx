@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import * as classroomService from '../services/classroomService.js';
 
 export default function SearchClassroom() {
@@ -90,6 +91,13 @@ export default function SearchClassroom() {
               </dd>
             </div>
           </dl>
+          {classroom._id && (
+            <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
+              <Link to={`/map?dest=${classroom._id}`} className="btn btn-primary">
+                Show on Campus Map
+              </Link>
+            </div>
+          )}
         </section>
       )}
     </div>

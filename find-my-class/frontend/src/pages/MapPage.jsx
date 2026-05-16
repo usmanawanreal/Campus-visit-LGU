@@ -567,9 +567,7 @@ export default function MapPage() {
   const formatLocationOptionLabel = useCallback(
     (location) => {
       const mapLabel = mapIdToLabel.get(String(location.mapId || '')) || location.mapId || '';
-      const floor =
-        Number.isFinite(Number(location.floor)) ? `floor ${location.floor}` : '';
-      return [location.name, mapLabel, floor].filter(Boolean).join(' — ');
+      return [location.name, mapLabel].filter(Boolean).join(' — ');
     },
     [mapIdToLabel]
   );
@@ -634,7 +632,6 @@ export default function MapPage() {
         const { data } = await navigationLocationService.getAll(params);
         if (!isCancelled) {
           setLocations(data?.data || []);
-          setFocusedLocationId((prev) => (editingNavLocationId ? prev : null));
         }
       } catch (error) {
         if (!isCancelled) {
@@ -1358,6 +1355,28 @@ export default function MapPage() {
       cancelled = true;
     };
   }, [editEdgeFromUrl, handleStartEdgeEdit, setSearchParams]);
+
+  const destFromUrl = searchParams.get('dest');
+  useEffect(() => {
+    if (destFromUrl && allLocations.length > 0) {
+      const loc = allLocations.find((l) => String(l._id) === destFromUrl);
+      if (loc) {
+        setDestinationLocationId(destFromUrl);
+        setFocusedLocationId(destFromUrl);
+        if (loc.mapId) {
+          handleNavigationMapChange(loc.mapId);
+        }
+        setSearchParams(
+          (prev) => {
+            const next = new URLSearchParams(prev);
+            next.delete('dest');
+            return next;
+          },
+          { replace: true }
+        );
+      }
+    }
+  }, [destFromUrl, allLocations, setSearchParams, handleNavigationMapChange]);
 
   useEffect(() => {
     if (!editingEdgeId) return;

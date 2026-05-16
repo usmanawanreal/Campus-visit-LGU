@@ -45,9 +45,11 @@ test('appendLegPoints uses anchors when present', () => {
     startAnchor: { x: 0.5, y: 0.5 },
     endAnchor: { x: 9.5, y: 9.5 }
   });
-  assert.equal(raw.length, 2);
-  assert.equal(raw[0].x, 0.5);
-  assert.equal(raw[1].x, 9.5);
+  assert.equal(raw.length, 4);
+  assert.equal(raw[0].x, 0);
+  assert.equal(raw[1].x, 0.5);
+  assert.equal(raw[2].x, 9.5);
+  assert.equal(raw[3].x, 99);
 });
 
 test('rawPointsToSegments splits when mapId changes', () => {

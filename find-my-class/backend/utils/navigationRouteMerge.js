@@ -71,35 +71,22 @@ export function appendLegPoints(rawPoints, startLoc, endLoc, detailed, physicalS
   const logicalStart = { x: Number(startForXY.x), y: Number(startForXY.y) };
   const startIsDoor = physicalStartLoc && physicalStartLoc.kind === 'door';
 
-  if (
-    startIsDoor &&
-    firstOnPath &&
-    dist2D(logicalStart, firstOnPath) > PIN_SNAP_EPS
-  ) {
-    pushPt(
-      logicalStart.x,
-      logicalStart.y,
-      mapA,
-      startForXY.floor ?? startLoc.floor ?? routeNodes[0]?.floor ?? null,
-      startForXY.building ||
-        startForXY.buildingId ||
-        startLoc.building ||
-        startLoc.buildingId ||
-        routeNodes[0]?.buildingId
-    );
-  }
-
-  pushPt(
-    routeStartXY.x,
-    routeStartXY.y,
-    mapA,
-    startForXY.floor ?? startLoc.floor ?? routeNodes[0]?.floor ?? null,
+  /* ── Always prepend the actual start location center ──
+   * For corridor routing the routeStartXY is the corridor snap point, not
+   * the room center.  Drawing room-center → snap gives a visible line from
+   * the room to the corridor.  (The duplicate-check in pushPt prevents
+   * double-adding when they're the same point.)
+   */
+  const startBld =
     startForXY.building ||
-      startForXY.buildingId ||
-      startLoc.building ||
-      startLoc.buildingId ||
-      routeNodes[0]?.buildingId
-  );
+    startForXY.buildingId ||
+    startLoc.building ||
+    startLoc.buildingId ||
+    routeNodes[0]?.buildingId;
+  const startFlr = startForXY.floor ?? startLoc.floor ?? routeNodes[0]?.floor ?? null;
+
+  pushPt(logicalStart.x, logicalStart.y, mapA, startFlr, startBld);
+  pushPt(routeStartXY.x, routeStartXY.y, mapA, startFlr, startBld);
 
   routeNodes.forEach((n) => {
     pushPt(
@@ -111,29 +98,17 @@ export function appendLegPoints(rawPoints, startLoc, endLoc, detailed, physicalS
     );
   });
 
-  const endIsDoor = endLoc && endLoc.kind === 'door';
-  const lastAfterNodes = rawPoints[rawPoints.length - 1];
-  const logicalEnd = { x: Number(endLoc.x), y: Number(endLoc.y) };
+  /* ── Always append the actual end location center ──
+   * Same idea: snap → room-center draws a line from corridor to destination.
+   */
+  const endFlr = endLoc.floor ?? routeNodes[routeNodes.length - 1]?.floor ?? null;
+  const endMap = endLoc.mapId || routeNodes[routeNodes.length - 1]?.mapId || mapA;
+  const endBld = endLocationBuildingId(endLoc, routeNodes);
 
-  if (endIsDoor && lastAfterNodes) {
-    if (dist2D(logicalEnd, { x: lastAfterNodes.x, y: lastAfterNodes.y }) > PIN_SNAP_EPS) {
-      pushPt(
-        logicalEnd.x,
-        logicalEnd.y,
-        endLoc.mapId || routeNodes[routeNodes.length - 1]?.mapId || mapA,
-        endLoc.floor ?? routeNodes[routeNodes.length - 1]?.floor ?? null,
-        endLocationBuildingId(endLoc, routeNodes)
-      );
-    }
-  } else {
-    pushPt(
-      routeEndXY.x,
-      routeEndXY.y,
-      endLoc.mapId || routeNodes[routeNodes.length - 1]?.mapId || mapA,
-      endLoc.floor ?? routeNodes[routeNodes.length - 1]?.floor ?? null,
-      endLocationBuildingId(endLoc, routeNodes)
-    );
-  }
+  pushPt(routeEndXY.x, routeEndXY.y, endMap, endFlr, endBld);
+
+  const logicalEnd = { x: Number(endLoc.x), y: Number(endLoc.y) };
+  pushPt(logicalEnd.x, logicalEnd.y, endMap, endFlr, endBld);
 }
 
 /**
